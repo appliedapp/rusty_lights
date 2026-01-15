@@ -23,10 +23,15 @@ impl ScrollEffect {
         Self {
             num_leds,
             buffer: vec![Rgb::black(); num_leds].into_boxed_slice(),
-            gradient: Gradient::rainbow(),
+            gradient: Gradient::fire(),
             speed: 1,
             brightness: 1.0,
         }
+    }
+
+    /// Set the color gradient by name
+    pub fn set_gradient(&mut self, name: &str) {
+        self.gradient = Gradient::by_name(name);
     }
 }
 
@@ -51,15 +56,14 @@ impl Effect for ScrollEffect {
         let energy: f32 = mel_bands.iter().sum::<f32>() / mel_bands.len() as f32;
         let energy = energy.clamp(0.0, 1.0);
 
-        // Use beat for hue shift if detected
-        let hue_shift = beat.map_or(0.0, |b| b * 60.0);
+        // Use beat for position shift if detected
+        let beat_boost = beat.map_or(0.0, |b| b * 0.3);
 
-        // Generate new color at position 0
-        let base_hue = (energy * 120.0 + hue_shift) % 360.0; // Green-ish for low, red for high
-        let saturation = 0.8 + energy * 0.2;
-        let value = energy * self.brightness;
+        // Generate new color from gradient based on energy
+        let gradient_pos = (energy + beat_boost).clamp(0.0, 1.0);
+        let base_color = self.gradient.get(gradient_pos);
 
-        self.buffer[0] = Rgb::from_hsv(base_hue, saturation, value);
+        self.buffer[0] = base_color.scale(energy.max(0.1) * self.brightness);
 
         // Copy buffer to output
         for (i, led) in output.iter_mut().enumerate().take(self.num_leds) {

@@ -163,6 +163,73 @@ impl Gradient {
         Self::from_colors(&colors, 256)
     }
 
+    /// Create a forest gradient (dark green to bright green)
+    pub fn forest() -> Self {
+        let colors = vec![
+            Rgb::new(0, 32, 0),
+            Rgb::new(0, 64, 16),
+            Rgb::new(0, 128, 32),
+            Rgb::new(32, 192, 64),
+            Rgb::new(64, 255, 128),
+        ];
+        Self::from_colors(&colors, 256)
+    }
+
+    /// Create a sunset gradient (purple-pink-orange-yellow)
+    pub fn sunset() -> Self {
+        let colors = vec![
+            Rgb::new(64, 0, 128),
+            Rgb::new(128, 0, 128),
+            Rgb::new(255, 64, 128),
+            Rgb::new(255, 128, 64),
+            Rgb::new(255, 200, 64),
+        ];
+        Self::from_colors(&colors, 256)
+    }
+
+    /// Create a party gradient (bright saturated colors)
+    pub fn party() -> Self {
+        let colors = vec![
+            Rgb::new(255, 0, 128),
+            Rgb::new(0, 255, 255),
+            Rgb::new(255, 255, 0),
+            Rgb::new(128, 0, 255),
+            Rgb::new(0, 255, 128),
+        ];
+        Self::from_colors(&colors, 256)
+    }
+
+    /// Create a lava gradient (dark red to bright orange)
+    pub fn lava() -> Self {
+        let colors = vec![
+            Rgb::new(32, 0, 0),
+            Rgb::new(128, 0, 0),
+            Rgb::new(192, 32, 0),
+            Rgb::new(255, 96, 0),
+            Rgb::new(255, 160, 32),
+        ];
+        Self::from_colors(&colors, 256)
+    }
+
+    /// Create a gradient by name
+    pub fn by_name(name: &str) -> Self {
+        match name.to_lowercase().as_str() {
+            "rainbow" => Self::rainbow(),
+            "fire" => Self::fire(),
+            "ocean" => Self::ocean(),
+            "forest" => Self::forest(),
+            "sunset" => Self::sunset(),
+            "party" => Self::party(),
+            "lava" => Self::lava(),
+            _ => Self::rainbow(),
+        }
+    }
+
+    /// List available gradient names
+    pub fn list_names() -> &'static [&'static str] {
+        &["rainbow", "fire", "ocean", "forest", "sunset", "party", "lava"]
+    }
+
     /// Create a gradient from a list of colors
     pub fn from_colors(colors: &[Rgb], steps: usize) -> Self {
         if colors.is_empty() {
