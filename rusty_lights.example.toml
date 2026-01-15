@@ -1,0 +1,46 @@
+# RustyLights Example Configuration
+# Copy to rusty_lights.toml and adjust as needed
+
+[audio]
+backend = "pipewire"        # pipewire | alsa
+device = "auto"             # "auto" or specific device name
+sample_rate = 48000
+chunk_size = 512
+
+[dsp]
+fft_size = 512              # 256 | 512 | 1024
+mel_bands = 24              # 16 - 32 recommended
+freq_min = 20               # Hz
+freq_max = 18000            # Hz
+smoothing = 0.7             # 0.0 - 1.0 (higher = smoother)
+
+[effect]
+name = "spectrum"           # energy | spectrum | scroll | reactive
+
+[effect.params]
+gradient = "rainbow"        # rainbow | fire | ocean
+mirror = false
+brightness = 1.0
+
+[output]
+protocol = "e131"           # e131 | ddp | artnet
+target = "239.255.0.1"      # Multicast address or IP of LED controller
+universe = 1
+fps = 60
+
+[output.leds]
+count = 300
+rgb_order = "GRB"           # RGB | GRB | BGR (depends on LED strip)
+
+# Optional: Multiple output segments for complex setups
+# [[output.segments]]
+# target = "192.168.1.100"
+# universe = 1
+# start_led = 0
+# end_led = 150
+#
+# [[output.segments]]
+# target = "192.168.1.101"
+# universe = 2
+# start_led = 150
+# end_led = 300

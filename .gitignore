@@ -1,0 +1,30 @@
+# Build artifacts
+/target
+*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config files (user-specific)
+rusty_lights.toml
+config.toml
+
+# Logs
+*.log
+
+# Benchmark results
+/target/criterion/
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+*.prof

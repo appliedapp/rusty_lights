@@ -1,0 +1,63 @@
+[package]
+name = "rusty_lights"
+version = "0.1.0"
+edition = "2024"
+authors = ["RustLED Contributors"]
+description = "Resource-efficient audio-to-LED visualization"
+license = "MIT"
+readme = "README.md"
+keywords = ["led", "audio", "visualization", "e131", "sacn"]
+categories = ["multimedia", "embedded"]
+
+[features]
+default = ["pipewire", "e131"]
+pipewire = ["dep:pipewire"]
+alsa = ["dep:alsa"]
+e131 = []
+ddp = []
+artnet = []
+simd = []  # Explicit SIMD optimizations
+
+[dependencies]
+# Audio
+pipewire = { version = "0.9", optional = true }
+alsa = { version = "0.11", optional = true }
+
+# DSP
+realfft = "3.5"
+
+# Config & CLI
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.9"
+clap = { version = "4.5", features = ["derive"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Networking
+socket2 = { version = "0.6", features = ["all"] }
+
+# Utilities
+thiserror = "2.0"
+uuid = { version = "1.19", features = ["v4"] }
+ctrlc = "3.5"
+
+[dev-dependencies]
+criterion = { version = "0.6", features = ["html_reports"] }
+
+[[bench]]
+name = "dsp_bench"
+harness = false
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true
+opt-level = 3
+
+[profile.release-small]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
