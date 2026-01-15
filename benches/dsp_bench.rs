@@ -1,7 +1,7 @@
 //! DSP benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
-use rusty_lights::dsp::{FftProcessor, MelBank, Smoother};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use rusty_lights::dsp::{BeatDetector, DspConfig, DspPipeline, FftProcessor, MelBank, Smoother};
 
 fn bench_fft(c: &mut Criterion) {
     let mut group = c.benchmark_group("FFT");
@@ -61,12 +61,29 @@ fn bench_smoother(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_beat_detector(c: &mut Criterion) {
+    let mut group = c.benchmark_group("BeatDetector");
+
+    let num_bins = 257; // FFT 512 -> 257 bins
+    let mut detector = BeatDetector::new(num_bins, 43);
+
+    // Generate fake magnitude spectrum
+    let magnitude: Vec<f32> = (0..num_bins).map(|i| (i as f32 / num_bins as f32)).collect();
+
+    group.bench_function("process", |b| {
+        b.iter(|| {
+            black_box(detector.process(black_box(&magnitude)));
+        });
+    });
+
+    group.finish();
+}
+
 fn bench_full_pipeline(c: &mut Criterion) {
     let mut group = c.benchmark_group("FullPipeline");
 
     let fft_size = 512;
     let num_bands = 24;
-    let num_leds = 300;
 
     let mut fft = FftProcessor::new(fft_size).unwrap();
     let mut mel_bank = MelBank::new(num_bands, fft_size, 48000, 20.0, 18000.0).unwrap();
@@ -79,7 +96,7 @@ fn bench_full_pipeline(c: &mut Criterion) {
 
     let mut mel_output = vec![0.0; num_bands];
 
-    group.bench_function("dsp_chain", |b| {
+    group.bench_function("manual_chain", |b| {
         b.iter(|| {
             // FFT
             let magnitude = fft.process(black_box(&samples));
@@ -97,12 +114,34 @@ fn bench_full_pipeline(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_dsp_pipeline(c: &mut Criterion) {
+    let mut group = c.benchmark_group("DspPipeline");
+
+    let config = DspConfig::default();
+    let mut pipeline = DspPipeline::new(&config).unwrap();
+
+    // Generate test signal
+    let samples: Vec<f32> = (0..config.fft_size)
+        .map(|i| (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin())
+        .collect();
+
+    group.bench_function("process", |b| {
+        b.iter(|| {
+            black_box(pipeline.process(black_box(&samples)));
+        });
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_fft,
     bench_mel_bank,
     bench_smoother,
+    bench_beat_detector,
     bench_full_pipeline,
+    bench_dsp_pipeline,
 );
 
 criterion_main!(benches);

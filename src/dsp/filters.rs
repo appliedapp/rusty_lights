@@ -64,6 +64,91 @@ impl Smoother {
     }
 }
 
+/// Attack/Release Smoother
+///
+/// Provides temporal smoothing with separate attack and release times.
+/// Attack controls how fast the signal rises, release controls how fast it falls.
+pub struct AttackReleaseSmoother {
+    /// Attack coefficient (for rising signals)
+    attack: f32,
+    /// Release coefficient (for falling signals)
+    release: f32,
+    /// Current smoothed state
+    state: Box<[f32]>,
+}
+
+impl AttackReleaseSmoother {
+    /// Create a new attack/release smoother
+    ///
+    /// # Arguments
+    /// * `size` - Number of channels to smooth
+    /// * `attack` - Attack time (0.0 = instant, 1.0 = very slow)
+    /// * `release` - Release time (0.0 = instant, 1.0 = very slow)
+    pub fn new(size: usize, attack: f32, release: f32) -> Self {
+        Self {
+            attack: attack.clamp(0.0, 0.999),
+            release: release.clamp(0.0, 0.999),
+            state: vec![0.0; size].into_boxed_slice(),
+        }
+    }
+
+    /// Create with typical LED visualization settings
+    ///
+    /// Fast attack for responsive feel, slower release for smooth decay.
+    pub fn for_visualization(size: usize) -> Self {
+        Self::new(size, 0.3, 0.8)
+    }
+
+    /// Process input samples with attack/release smoothing
+    #[inline]
+    pub fn process(&mut self, input: &[f32], output: &mut [f32]) {
+        for (i, &x) in input.iter().enumerate() {
+            if i < self.state.len() {
+                let alpha = if x > self.state[i] {
+                    self.attack
+                } else {
+                    self.release
+                };
+                self.state[i] = alpha * self.state[i] + (1.0 - alpha) * x;
+                if i < output.len() {
+                    output[i] = self.state[i];
+                }
+            }
+        }
+    }
+
+    /// Process in-place
+    #[inline]
+    pub fn process_inplace(&mut self, data: &mut [f32]) {
+        for (i, x) in data.iter_mut().enumerate() {
+            if i < self.state.len() {
+                let alpha = if *x > self.state[i] {
+                    self.attack
+                } else {
+                    self.release
+                };
+                self.state[i] = alpha * self.state[i] + (1.0 - alpha) * *x;
+                *x = self.state[i];
+            }
+        }
+    }
+
+    /// Set attack time
+    pub fn set_attack(&mut self, attack: f32) {
+        self.attack = attack.clamp(0.0, 0.999);
+    }
+
+    /// Set release time
+    pub fn set_release(&mut self, release: f32) {
+        self.release = release.clamp(0.0, 0.999);
+    }
+
+    /// Reset state to zero
+    pub fn reset(&mut self) {
+        self.state.fill(0.0);
+    }
+}
+
 /// Automatic Gain Control
 ///
 /// Normalizes signal levels over time for consistent output.
@@ -158,6 +243,26 @@ mod tests {
             smoother.process(&input, &mut output);
         }
         assert!(output.iter().all(|&x| (x - 1.0).abs() < 0.01));
+    }
+
+    #[test]
+    fn test_attack_release_smoother() {
+        let mut smoother = AttackReleaseSmoother::new(4, 0.2, 0.8);
+
+        // Rising signal - should respond quickly (low attack)
+        let input = [1.0, 1.0, 1.0, 1.0];
+        let mut output = [0.0; 4];
+
+        smoother.process(&input, &mut output);
+        // With attack=0.2, output = 0.2 * 0 + 0.8 * 1.0 = 0.8
+        assert!(output[0] > 0.5, "Attack should be fast");
+
+        // Falling signal - should respond slowly (high release)
+        smoother.state.fill(1.0);
+        let input_low = [0.0, 0.0, 0.0, 0.0];
+        smoother.process(&input_low, &mut output);
+        // With release=0.8, output = 0.8 * 1.0 + 0.2 * 0.0 = 0.8
+        assert!(output[0] > 0.5, "Release should be slow");
     }
 
     #[test]

@@ -1,14 +1,30 @@
 //! Digital Signal Processing pipeline
+//!
+//! This module provides the complete DSP chain for audio visualization:
+//! - FFT for frequency analysis
+//! - Mel filterbank for perceptual frequency bands
+//! - Smoothing filters for temporal coherence
+//! - Beat detection for rhythm-reactive effects
 
 mod fft;
 mod filters;
 mod mel;
+mod pipeline;
 
 pub mod beat;
 
+// Core processors
 pub use fft::FftProcessor;
-pub use filters::Smoother;
 pub use mel::MelBank;
+
+// Filters
+pub use filters::{Agc, AttackReleaseSmoother, Smoother};
+
+// Beat detection
+pub use beat::BeatDetector;
+
+// Unified pipeline
+pub use pipeline::{DspConfig, DspPipeline, DspResult};
 
 use thiserror::Error;
 

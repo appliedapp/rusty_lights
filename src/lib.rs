@@ -10,4 +10,5 @@ pub mod output;
 pub mod util;
 
 pub use config::Config;
+pub use dsp::{DspConfig, DspPipeline};
 pub use effects::Rgb;
