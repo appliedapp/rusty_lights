@@ -41,6 +41,10 @@ enum Commands {
     Devices,
     /// List available effects
     Effects,
+    /// List available color gradients
+    Gradients,
+    /// Show current configuration
+    Config,
     /// Send test pattern to LEDs
     Test {
         /// Number of LEDs to test
@@ -73,15 +77,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Run => run_visualizer(&cli),
         Commands::Devices => list_devices(),
         Commands::Effects => list_effects(),
+        Commands::Gradients => list_gradients(),
+        Commands::Config => show_config(&cli),
         Commands::Test { leds } => run_test_pattern(leds, &cli),
     }
 }
 
 fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    use rusty_lights::Engine;
+    use std::sync::atomic::Ordering;
+
     log::info!("Starting RustyLights visualizer...");
 
     // Load configuration
-    let config = if cli.config.exists() {
+    let mut config = if cli.config.exists() {
         log::info!("Loading config from {:?}", cli.config);
         Config::load(&cli.config)?
     } else {
@@ -89,38 +98,47 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         Config::default()
     };
 
-    log::debug!("Audio backend: {}", config.audio.backend);
-    log::debug!("FFT size: {}", config.dsp.fft_size);
-    log::debug!("Effect: {}", config.effect.name);
-    log::debug!("Output: {} to {}", config.output.protocol, config.output.target);
-
-    // TODO: Initialize audio capture
-    // TODO: Initialize DSP pipeline
-    // TODO: Initialize effect engine
-    // TODO: Initialize output
-    // TODO: Start main loop
-
-    log::info!("Visualizer ready. Press Ctrl+C to stop.");
-
-    // Wait for shutdown signal
-    #[cfg(unix)]
-    {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        let running = Arc::new(AtomicBool::new(true));
-        let r = running.clone();
-
-        ctrlc::set_handler(move || {
-            r.store(false, Ordering::SeqCst);
-        })?;
-
-        while running.load(Ordering::SeqCst) {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+    // Apply CLI overrides
+    if let Some(ref device) = cli.device {
+        config.audio.device = device.clone();
+    }
+    if let Some(ref effect) = cli.effect {
+        config.effect.name = effect.clone();
     }
 
-    log::info!("Shutting down...");
+    log::info!("Audio: {} ({})", config.audio.backend, config.audio.device);
+    log::info!("DSP: FFT={}, Mel bands={}", config.dsp.fft_size, config.dsp.mel_bands);
+    log::info!("Effect: {}", config.effect.name);
+    log::info!("Output: {} to {} ({} LEDs @ {} FPS)",
+        config.output.protocol,
+        config.output.target,
+        config.output.leds.count,
+        config.output.fps
+    );
+
+    // Create and start engine
+    let mut engine = Engine::new(config)?;
+    let running = engine.running_flag();
+
+    // Set up Ctrl+C handler
+    let r = running.clone();
+    ctrlc::set_handler(move || {
+        log::info!("Shutdown signal received...");
+        r.store(false, Ordering::SeqCst);
+    })?;
+
+    engine.start()?;
+
+    log::info!("Visualizer running. Press Ctrl+C to stop.");
+
+    // Wait for shutdown
+    while running.load(Ordering::SeqCst) {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    engine.stop()?;
+
+    log::info!("Shutdown complete.");
     Ok(())
 }
 
@@ -154,12 +172,72 @@ fn list_effects() -> Result<(), Box<dyn std::error::Error>> {
     for name in registry.list() {
         println!("  - {}", name);
     }
+    println!();
+    println!("Use -e/--effect to select an effect.");
+    Ok(())
+}
+
+fn list_gradients() -> Result<(), Box<dyn std::error::Error>> {
+    use rusty_lights::effects::Gradient;
+
+    println!("Available gradients:");
+    for name in Gradient::list_names() {
+        println!("  - {}", name);
+    }
+    Ok(())
+}
+
+fn show_config(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
+    use rusty_lights::output::available_protocols;
+
+    let config = if cli.config.exists() {
+        println!("Configuration file: {:?}", cli.config);
+        Config::load(&cli.config)?
+    } else {
+        println!("Configuration file: (using defaults)");
+        Config::default()
+    };
+
+    println!();
+    println!("[audio]");
+    println!("  backend = \"{}\"", config.audio.backend);
+    println!("  device = \"{}\"", config.audio.device);
+    println!("  sample_rate = {}", config.audio.sample_rate);
+    println!("  chunk_size = {}", config.audio.chunk_size);
+
+    println!();
+    println!("[dsp]");
+    println!("  fft_size = {}", config.dsp.fft_size);
+    println!("  mel_bands = {}", config.dsp.mel_bands);
+    println!("  freq_min = {}", config.dsp.freq_min);
+    println!("  freq_max = {}", config.dsp.freq_max);
+    println!("  smoothing = {}", config.dsp.smoothing);
+
+    println!();
+    println!("[effect]");
+    println!("  name = \"{}\"", config.effect.name);
+
+    println!();
+    println!("[output]");
+    println!("  protocol = \"{}\"", config.output.protocol);
+    println!("  target = \"{}\"", config.output.target);
+    println!("  universe = {}", config.output.universe);
+    println!("  fps = {}", config.output.fps);
+
+    println!();
+    println!("[output.leds]");
+    println!("  count = {}", config.output.leds.count);
+    println!("  rgb_order = \"{}\"", config.output.leds.rgb_order);
+
+    println!();
+    println!("Available protocols: {:?}", available_protocols());
+
     Ok(())
 }
 
 fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     use rusty_lights::effects::Rgb;
-    use rusty_lights::output::{E131Sender, LedOutput};
+    use rusty_lights::output::{create_output, RateLimiter};
 
     log::info!("Sending test pattern to {} LEDs...", num_leds);
 
@@ -170,14 +248,22 @@ fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error
         Config::default()
     };
 
-    let mut sender = E131Sender::new(&config.output.target, config.output.universe)?;
+    let mut output = create_output(
+        &config.output.protocol,
+        &config.output.target,
+        config.output.universe,
+    )?;
+
+    let mut rate_limiter = RateLimiter::new(60);
 
     // Create rainbow test pattern
     let mut leds: Vec<Rgb> = (0..num_leds)
         .map(|i| Rgb::from_hsv(i as f32 * 360.0 / num_leds as f32, 1.0, 0.5))
         .collect();
 
-    // Animate for a few seconds
+    log::info!("Sending to {} via {}", config.output.target, config.output.protocol);
+
+    // Animate for 3 seconds (180 frames at 60fps)
     for frame in 0..180 {
         // Rotate colors
         let hue_offset = frame as f32 * 2.0;
@@ -186,18 +272,14 @@ fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error
             *led = Rgb::from_hsv(hue, 1.0, 0.5);
         }
 
-        sender.send(&leds)?;
-        std::thread::sleep(std::time::Duration::from_millis(16)); // ~60fps
+        output.send(&leds)?;
+        rate_limiter.wait();
     }
 
     // Turn off LEDs
     leds.fill(Rgb::black());
-    sender.send(&leds)?;
+    output.send(&leds)?;
 
     log::info!("Test pattern complete.");
     Ok(())
 }
-
-// Signal handling support
-#[cfg(unix)]
-extern crate ctrlc;
