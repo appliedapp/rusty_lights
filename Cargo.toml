@@ -10,12 +10,9 @@ keywords = ["led", "audio", "visualization", "e131", "sacn"]
 categories = ["multimedia", "embedded"]
 
 [features]
-default = ["pipewire", "e131"]
+default = ["pipewire"]
 pipewire = ["dep:pipewire"]
 alsa = ["dep:alsa"]
-e131 = []
-ddp = []
-artnet = []
 simd = []  # Explicit SIMD optimizations
 
 [dependencies]
