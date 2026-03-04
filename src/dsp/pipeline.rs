@@ -1,6 +1,6 @@
 //! Unified DSP pipeline combining FFT, Mel filterbank, and smoothing
 
-use super::{beat::BeatDetector, fft::FftProcessor, filters::Smoother, mel::MelBank, DspError};
+use super::{beat::BeatDetector, fft::FftProcessor, filters::{Agc, AttackReleaseSmoother}, mel::MelBank, DspError};
 
 /// Complete DSP processing pipeline
 ///
@@ -9,10 +9,13 @@ use super::{beat::BeatDetector, fft::FftProcessor, filters::Smoother, mel::MelBa
 pub struct DspPipeline {
     fft: FftProcessor,
     mel_bank: MelBank,
-    smoother: Smoother,
+    smoother: AttackReleaseSmoother,
+    agc: Agc,
     beat_detector: BeatDetector,
     /// Smoothed Mel band output
     output: Box<[f32]>,
+    /// AGC intermediate buffer
+    agc_buffer: Box<[f32]>,
     /// FFT size
     fft_size: usize,
     /// Number of Mel bands
@@ -32,7 +35,7 @@ pub struct DspConfig {
     pub freq_min: f32,
     /// Maximum frequency for Mel filterbank
     pub freq_max: f32,
-    /// Smoothing factor (0.0 - 1.0)
+    /// Smoothing factor (0.0 - 1.0) — used as release time, attack is derived
     pub smoothing: f32,
     /// Beat detection sensitivity (1.0 - 3.0)
     pub beat_sensitivity: f32,
@@ -77,17 +80,24 @@ impl DspPipeline {
             config.freq_max,
         )?;
 
-        let smoother = Smoother::new(config.mel_bands, config.smoothing);
+        // Attack/release smoother: fast attack (0.1), release from config smoothing
+        let smoother = AttackReleaseSmoother::new(config.mel_bands, 0.1, config.smoothing);
+
+        // AGC: target 0.8 peak, moderate tracking speed
+        let agc = Agc::new(0.8, 0.05, 0.02);
 
         // Beat detector history: ~0.7s at 60fps = 43 frames
-        let beat_detector = BeatDetector::new(num_bins, 43);
+        let mut beat_detector = BeatDetector::new(num_bins, 43);
+        beat_detector.set_sensitivity(config.beat_sensitivity);
 
         Ok(Self {
             fft,
             mel_bank,
             smoother,
+            agc,
             beat_detector,
             output: vec![0.0; config.mel_bands].into_boxed_slice(),
+            agc_buffer: vec![0.0; config.mel_bands].into_boxed_slice(),
             fft_size: config.fft_size,
             num_bands: config.mel_bands,
         })
@@ -110,8 +120,11 @@ impl DspPipeline {
         // Step 3: Mel filterbank
         let mel_raw = self.mel_bank.process(magnitude);
 
-        // Step 4: Smoothing
-        self.smoother.process(mel_raw, &mut self.output);
+        // Step 4: AGC (normalize levels across quiet/loud passages)
+        self.agc.process(mel_raw, &mut self.agc_buffer);
+
+        // Step 5: Attack/release smoothing (fast attack, slow decay)
+        self.smoother.process(&self.agc_buffer, &mut self.output);
 
         DspResult {
             mel_bands: &self.output,
@@ -131,7 +144,7 @@ impl DspPipeline {
     }
 
     /// Get smoother for direct access
-    pub fn smoother(&mut self) -> &mut Smoother {
+    pub fn smoother(&mut self) -> &mut AttackReleaseSmoother {
         &mut self.smoother
     }
 
@@ -152,9 +165,9 @@ impl DspPipeline {
         self.num_bands
     }
 
-    /// Set smoothing factor
+    /// Set smoothing factor (adjusts release time)
     pub fn set_smoothing(&mut self, smoothing: f32) {
-        self.smoother.set_smoothing(smoothing);
+        self.smoother.set_release(smoothing);
     }
 
     /// Set beat detection sensitivity
@@ -165,8 +178,10 @@ impl DspPipeline {
     /// Reset all internal state
     pub fn reset(&mut self) {
         self.smoother.reset();
+        self.agc.reset();
         self.beat_detector.reset();
         self.output.fill(0.0);
+        self.agc_buffer.fill(0.0);
     }
 }
 

@@ -15,6 +15,7 @@ mod scroll;
 mod reactive;
 mod pulse;
 mod vumeter;
+mod chromafreq;
 
 pub use traits::{Effect, Gradient, Rgb};
 pub use energy::EnergyEffect;
@@ -23,6 +24,7 @@ pub use scroll::ScrollEffect;
 pub use reactive::ReactiveEffect;
 pub use pulse::PulseEffect;
 pub use vumeter::VuMeterEffect;
+pub use chromafreq::ChromaFreqEffect;
 
 use std::collections::HashMap;
 use thiserror::Error;
@@ -53,6 +55,7 @@ impl EffectRegistry {
         registry.register("reactive", |num_leds| Box::new(ReactiveEffect::new(num_leds)));
         registry.register("pulse", |num_leds| Box::new(PulseEffect::new(num_leds)));
         registry.register("vumeter", |num_leds| Box::new(VuMeterEffect::new(num_leds)));
+        registry.register("chromafreq", |num_leds| Box::new(ChromaFreqEffect::new(num_leds)));
 
         registry
     }
@@ -100,7 +103,7 @@ mod tests {
         assert!(effects.contains(&"reactive"));
         assert!(effects.contains(&"pulse"));
         assert!(effects.contains(&"vumeter"));
-        assert_eq!(effects.len(), 6);
+        assert_eq!(effects.len(), 7);
     }
 
     #[test]

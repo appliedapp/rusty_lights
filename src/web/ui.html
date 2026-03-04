@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustyLights</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; color: #ccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; }
+h1 { font-size: 1.4em; margin-bottom: 16px; color: #fff; }
+.status { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+.status.connected { background: #0f0; }
+.status.disconnected { background: #f00; }
+
+.section { margin-bottom: 20px; }
+.section h2 { font-size: 1em; margin-bottom: 8px; color: #999; text-transform: uppercase; letter-spacing: 1px; font-size: 0.75em; }
+
+#led-canvas { width: 100%; height: 50px; border-radius: 4px; background: #000; display: block; }
+
+.mel-container { display: flex; align-items: flex-end; height: 120px; gap: 2px; background: #000; border-radius: 4px; padding: 4px; }
+.mel-bar { flex: 1; background: #0af; min-width: 4px; border-radius: 2px 2px 0 0; transition: height 0.05s; }
+
+.beat-dot { width: 24px; height: 24px; border-radius: 50%; background: #333; display: inline-block; vertical-align: middle; transition: background 0.1s; }
+.beat-dot.active { background: #f40; box-shadow: 0 0 12px #f40; }
+
+.controls { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.control { background: #1a1a1a; border-radius: 6px; padding: 12px; }
+.control label { display: block; font-size: 0.8em; color: #888; margin-bottom: 4px; }
+.control select, .control input[type=range] { width: 100%; }
+.control select { background: #222; color: #ccc; border: 1px solid #333; padding: 6px; border-radius: 4px; }
+.control .val { float: right; font-size: 0.8em; color: #0af; }
+</style>
+</head>
+<body>
+<h1><span class="status disconnected" id="status-dot"></span> RustyLights</h1>
+
+<div class="section">
+<h2>LED Strip</h2>
+<canvas id="led-canvas" height="50"></canvas>
+</div>
+
+<div class="section">
+<h2>Mel Bands <span class="beat-dot" id="beat-dot"></span></h2>
+<div class="mel-container" id="mel-container"></div>
+</div>
+
+<div class="section">
+<h2>Controls</h2>
+<div class="controls">
+  <div class="control">
+    <label>Effect</label>
+    <select id="ctrl-effect">
+      <option>energy</option>
+      <option>spectrum</option>
+      <option>scroll</option>
+      <option>reactive</option>
+      <option>pulse</option>
+      <option>vumeter</option>
+      <option>chromafreq</option>
+    </select>
+  </div>
+  <div class="control">
+    <label>Brightness <span class="val" id="val-brightness">1.0</span></label>
+    <input type="range" id="ctrl-brightness" min="0" max="1" step="0.05" value="1.0">
+  </div>
+  <div class="control">
+    <label>Smoothing <span class="val" id="val-smoothing">0.7</span></label>
+    <input type="range" id="ctrl-smoothing" min="0" max="0.95" step="0.05" value="0.7">
+  </div>
+  <div class="control">
+    <label>Beat Sensitivity <span class="val" id="val-beat">1.5</span></label>
+    <input type="range" id="ctrl-beat" min="1.0" max="3.0" step="0.1" value="1.5">
+  </div>
+</div>
+</div>
+
+<script>
+const canvas = document.getElementById('led-canvas');
+const ctx = canvas.getContext('2d');
+const melContainer = document.getElementById('mel-container');
+const beatDot = document.getElementById('beat-dot');
+const statusDot = document.getElementById('status-dot');
+
+const ctrlEffect = document.getElementById('ctrl-effect');
+const ctrlBrightness = document.getElementById('ctrl-brightness');
+const ctrlSmoothing = document.getElementById('ctrl-smoothing');
+const ctrlBeat = document.getElementById('ctrl-beat');
+
+let ws = null;
+let melBars = [];
+
+function resizeCanvas() {
+  canvas.width = canvas.clientWidth;
+  canvas.height = canvas.clientHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    statusDot.className = 'status connected';
+  };
+
+  ws.onclose = () => {
+    statusDot.className = 'status disconnected';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') {
+      handleState(JSON.parse(e.data));
+    } else {
+      handleFrame(new Uint8Array(e.data));
+    }
+  };
+}
+
+function handleState(state) {
+  if (state.effect) ctrlEffect.value = state.effect;
+  if (state.brightness !== undefined) {
+    ctrlBrightness.value = state.brightness;
+    document.getElementById('val-brightness').textContent = state.brightness.toFixed(2);
+  }
+  if (state.smoothing !== undefined) {
+    ctrlSmoothing.value = state.smoothing;
+    document.getElementById('val-smoothing').textContent = state.smoothing.toFixed(2);
+  }
+  if (state.beat_sensitivity !== undefined) {
+    ctrlBeat.value = state.beat_sensitivity;
+    document.getElementById('val-beat').textContent = state.beat_sensitivity.toFixed(1);
+  }
+}
+
+function handleFrame(data) {
+  if (data.length < 2) return;
+  const flags = data[0];
+  const melCount = data[1];
+  const beat = !!(flags & 1);
+
+  // Mel bands
+  if (melBars.length !== melCount) {
+    melContainer.innerHTML = '';
+    melBars = [];
+    for (let i = 0; i < melCount; i++) {
+      const bar = document.createElement('div');
+      bar.className = 'mel-bar';
+      melContainer.appendChild(bar);
+      melBars.push(bar);
+    }
+  }
+
+  for (let i = 0; i < melCount; i++) {
+    const v = data[2 + i] / 255;
+    melBars[i].style.height = (v * 100) + '%';
+    // Color gradient from blue to red based on intensity
+    const h = 200 - v * 200;
+    melBars[i].style.background = 'hsl(' + h + ', 90%, ' + (30 + v * 40) + '%)';
+  }
+
+  // Beat indicator
+  beatDot.className = beat ? 'beat-dot active' : 'beat-dot';
+
+  // LED strip
+  const rgbStart = 2 + melCount;
+  const numLeds = (data.length - rgbStart) / 3;
+  if (numLeds <= 0) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const ledW = w / numLeds;
+
+  ctx.clearRect(0, 0, w, h);
+  for (let i = 0; i < numLeds; i++) {
+    const off = rgbStart + i * 3;
+    ctx.fillStyle = 'rgb(' + data[off] + ',' + data[off+1] + ',' + data[off+2] + ')';
+    ctx.fillRect(i * ledW, 0, Math.ceil(ledW), h);
+  }
+}
+
+function send(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
+  }
+}
+
+ctrlEffect.addEventListener('change', () => send({ effect: ctrlEffect.value }));
+ctrlBrightness.addEventListener('input', () => {
+  const v = parseFloat(ctrlBrightness.value);
+  document.getElementById('val-brightness').textContent = v.toFixed(2);
+  send({ brightness: v });
+});
+ctrlSmoothing.addEventListener('input', () => {
+  const v = parseFloat(ctrlSmoothing.value);
+  document.getElementById('val-smoothing').textContent = v.toFixed(2);
+  send({ smoothing: v });
+});
+ctrlBeat.addEventListener('input', () => {
+  const v = parseFloat(ctrlBeat.value);
+  document.getElementById('val-beat').textContent = v.toFixed(1);
+  send({ beat_sensitivity: v });
+});
+
+connect();
+</script>
+</body>
+</html>

@@ -10,6 +10,9 @@ pub mod engine;
 pub mod output;
 pub mod util;
 
+#[cfg(feature = "http")]
+pub mod web;
+
 pub use config::Config;
 pub use dsp::{DspConfig, DspPipeline};
 pub use effects::Rgb;

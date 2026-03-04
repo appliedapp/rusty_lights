@@ -10,6 +10,8 @@ mod pipewire;
 #[cfg(feature = "alsa")]
 mod alsa;
 
+mod fifo;
+
 pub use ringbuffer::RingBuffer;
 
 #[cfg(feature = "pipewire")]
@@ -17,6 +19,8 @@ pub use self::pipewire::{AudioDevice as PipeWireDevice, PipeWireCapture};
 
 #[cfg(feature = "alsa")]
 pub use self::alsa::{AlsaCapture, AlsaDevice};
+
+pub use self::fifo::FifoCapture;
 
 use std::sync::Arc;
 use thiserror::Error;
@@ -56,13 +60,15 @@ pub struct AudioDeviceInfo {
 /// Create the appropriate audio backend based on available features and configuration
 ///
 /// # Arguments
-/// * `backend_name` - Backend to use: "pipewire", "alsa", or "auto"
+/// * `backend_name` - Backend to use: "pipewire", "alsa", "fifo", or "auto"
 /// * `sample_rate` - Desired sample rate
 /// * `ring_buffer` - Shared ring buffer for audio samples
+/// * `fifo_path` - Path to FIFO (only used when backend is "fifo")
 pub fn create_backend(
     backend_name: &str,
     sample_rate: u32,
     ring_buffer: Arc<RingBuffer<f32>>,
+    fifo_path: Option<&str>,
 ) -> Result<Box<dyn AudioBackend>, AudioError> {
     match backend_name.to_lowercase().as_str() {
         #[cfg(feature = "pipewire")]
@@ -74,6 +80,13 @@ pub fn create_backend(
         #[cfg(feature = "alsa")]
         "alsa" => {
             let capture = AlsaCapture::new(sample_rate, ring_buffer)?;
+            Ok(Box::new(capture))
+        }
+
+        "fifo" => {
+            let path = fifo_path.unwrap_or("/tmp/mpd.fifo");
+            log::info!("Using FIFO audio backend: {}", path);
+            let capture = FifoCapture::new(sample_rate, ring_buffer, path)?;
             Ok(Box::new(capture))
         }
 
@@ -109,7 +122,7 @@ pub fn create_backend(
         }
 
         _ => Err(AudioError::InitError(format!(
-            "Unknown backend: {}. Available: pipewire, alsa, auto",
+            "Unknown backend: {}. Available: pipewire, alsa, fifo, auto",
             backend_name
         ))),
     }
@@ -157,6 +170,8 @@ pub fn available_backends() -> Vec<&'static str> {
 
     #[cfg(feature = "alsa")]
     backends.push("alsa");
+
+    backends.push("fifo");
 
     backends
 }

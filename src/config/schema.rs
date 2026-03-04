@@ -10,6 +10,7 @@ pub struct Config {
     pub dsp: DspConfig,
     pub effect: EffectConfig,
     pub output: OutputConfig,
+    pub http: HttpConfig,
 }
 
 impl Default for Config {
@@ -19,6 +20,7 @@ impl Default for Config {
             dsp: DspConfig::default(),
             effect: EffectConfig::default(),
             output: OutputConfig::default(),
+            http: HttpConfig::default(),
         }
     }
 }
@@ -27,7 +29,7 @@ impl Default for Config {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct AudioConfig {
-    /// Audio backend: "pipewire" or "alsa"
+    /// Audio backend: "pipewire", "alsa", or "fifo"
     pub backend: String,
     /// Device name or "auto" for automatic selection
     pub device: String,
@@ -35,6 +37,8 @@ pub struct AudioConfig {
     pub sample_rate: u32,
     /// Audio chunk size in samples
     pub chunk_size: usize,
+    /// Path to FIFO named pipe (used when backend = "fifo")
+    pub fifo_path: Option<String>,
 }
 
 impl Default for AudioConfig {
@@ -44,6 +48,7 @@ impl Default for AudioConfig {
             device: "auto".to_string(),
             sample_rate: 48000,
             chunk_size: 512,
+            fifo_path: None,
         }
     }
 }
@@ -62,6 +67,8 @@ pub struct DspConfig {
     pub freq_max: f32,
     /// Smoothing factor (0.0 - 1.0)
     pub smoothing: f32,
+    /// Beat detection sensitivity (1.0 - 3.0, higher = fewer beats)
+    pub beat_sensitivity: f32,
 }
 
 impl Default for DspConfig {
@@ -72,6 +79,7 @@ impl Default for DspConfig {
             freq_min: 20.0,
             freq_max: 18000.0,
             smoothing: 0.7,
+            beat_sensitivity: 1.5,
         }
     }
 }
@@ -156,6 +164,25 @@ impl Default for LedConfig {
         Self {
             count: 300,
             rgb_order: "GRB".to_string(),
+        }
+    }
+}
+
+/// HTTP server configuration
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct HttpConfig {
+    /// Enable the HTTP/WebSocket server
+    pub enabled: bool,
+    /// Port to listen on
+    pub port: u16,
+}
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 8080,
         }
     }
 }

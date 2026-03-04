@@ -10,9 +10,19 @@ use crate::output::{create_output, RateLimiter};
 use crate::util::reorder_rgb;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use thiserror::Error;
+
+/// Config update messages from the web UI
+#[derive(Debug)]
+pub enum ConfigUpdateMsg {
+    SetEffect(String),
+    SetBrightness(f32),
+    SetSmoothing(f32),
+    SetBeatSensitivity(f32),
+}
 
 #[derive(Error, Debug)]
 pub enum EngineError {
@@ -35,6 +45,8 @@ pub struct Engine {
     audio_backend: Option<Box<dyn AudioBackend>>,
     ring_buffer: Arc<RingBuffer<f32>>,
     processing_thread: Option<JoinHandle<()>>,
+    #[cfg(feature = "http")]
+    web_thread: Option<JoinHandle<()>>,
 }
 
 impl Engine {
@@ -49,6 +61,8 @@ impl Engine {
             audio_backend: None,
             ring_buffer,
             processing_thread: None,
+            #[cfg(feature = "http")]
+            web_thread: None,
         })
     }
 
@@ -65,6 +79,7 @@ impl Engine {
             &self.config.audio.backend,
             self.config.audio.sample_rate,
             self.ring_buffer.clone(),
+            self.config.audio.fifo_path.as_deref(),
         )?;
 
         // Set device if specified
@@ -75,6 +90,36 @@ impl Engine {
         audio.start()?;
         self.audio_backend = Some(audio);
 
+        // Set up optional web server channels
+        #[allow(unused_mut)]
+        let mut frame_tx: Option<mpsc::Sender<(Vec<Rgb>, Vec<f32>, Option<f32>)>> = None;
+        #[allow(unused_mut)]
+        let mut config_rx: Option<mpsc::Receiver<ConfigUpdateMsg>> = None;
+
+        #[cfg(feature = "http")]
+        {
+            if self.config.http.enabled {
+                let (ftx, frx) = mpsc::channel();
+                let (ctx, crx) = mpsc::channel();
+                frame_tx = Some(ftx);
+                config_rx = Some(crx);
+
+                let web_handle = crate::web::start(
+                    self.config.http.port,
+                    frx,
+                    ctx,
+                    self.running.clone(),
+                    self.config.effect.name.clone(),
+                    self.config.effect.params.brightness.unwrap_or(1.0),
+                    self.config.dsp.smoothing,
+                    self.config.dsp.beat_sensitivity,
+                )
+                .map_err(|e| EngineError::Thread(e.to_string()))?;
+
+                self.web_thread = Some(web_handle);
+            }
+        }
+
         // Start processing thread
         let config = self.config.clone();
         let ring_buffer = self.ring_buffer.clone();
@@ -83,7 +128,13 @@ impl Engine {
         let handle = thread::Builder::new()
             .name("visualizer".to_string())
             .spawn(move || {
-                if let Err(e) = run_processing_loop(config, ring_buffer, running) {
+                if let Err(e) = run_processing_loop(
+                    config,
+                    ring_buffer,
+                    running,
+                    frame_tx,
+                    config_rx,
+                ) {
                     log::error!("Processing loop error: {}", e);
                 }
             })
@@ -116,6 +167,14 @@ impl Engine {
                 .map_err(|_| EngineError::Thread("Thread join failed".to_string()))?;
         }
 
+        // Wait for web server thread
+        #[cfg(feature = "http")]
+        {
+            if let Some(handle) = self.web_thread.take() {
+                let _ = handle.join();
+            }
+        }
+
         log::info!("Engine stopped");
         Ok(())
     }
@@ -142,6 +201,8 @@ fn run_processing_loop(
     config: Config,
     ring_buffer: Arc<RingBuffer<f32>>,
     running: Arc<AtomicBool>,
+    frame_tx: Option<mpsc::Sender<(Vec<Rgb>, Vec<f32>, Option<f32>)>>,
+    config_rx: Option<mpsc::Receiver<ConfigUpdateMsg>>,
 ) -> Result<(), EngineError> {
     // Initialize DSP pipeline
     let dsp_config = DspConfig {
@@ -151,7 +212,7 @@ fn run_processing_loop(
         freq_min: config.dsp.freq_min,
         freq_max: config.dsp.freq_max,
         smoothing: config.dsp.smoothing,
-        beat_sensitivity: 1.5,
+        beat_sensitivity: config.dsp.beat_sensitivity,
     };
     let mut dsp = DspPipeline::new(&dsp_config)?;
 
@@ -186,6 +247,8 @@ fn run_processing_loop(
     let mut led_buffer = vec![Rgb::black(); num_leds];
     let mut dmx_buffer = vec![0u8; num_leds * 3];
 
+    let mut frame_count: u64 = 0;
+
     log::info!(
         "Processing loop started: {} LEDs, {} FPS, {} effect",
         num_leds,
@@ -195,6 +258,32 @@ fn run_processing_loop(
 
     // Main loop
     while running.load(Ordering::Relaxed) {
+        // Handle config updates from web UI
+        if let Some(ref rx) = config_rx {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    ConfigUpdateMsg::SetEffect(name) => {
+                        match registry.create(&name, num_leds) {
+                            Ok(new_effect) => {
+                                effect = new_effect;
+                                log::info!("Effect changed to: {}", name);
+                            }
+                            Err(e) => log::warn!("Failed to set effect '{}': {}", name, e),
+                        }
+                    }
+                    ConfigUpdateMsg::SetBrightness(v) => {
+                        let _ = effect.set_param("brightness", v);
+                    }
+                    ConfigUpdateMsg::SetSmoothing(v) => {
+                        dsp.set_smoothing(v);
+                    }
+                    ConfigUpdateMsg::SetBeatSensitivity(v) => {
+                        dsp.set_beat_sensitivity(v);
+                    }
+                }
+            }
+        }
+
         // Read audio samples from ring buffer
         let samples_read = ring_buffer.pop_slice(&mut audio_buffer);
 
@@ -204,6 +293,17 @@ fn run_processing_loop(
 
             // Render effect
             effect.render(dsp_result.mel_bands, dsp_result.beat, &mut led_buffer);
+
+            // Send frame to web UI (~30fps: every other frame)
+            if let Some(ref tx) = frame_tx {
+                if frame_count % 2 == 0 {
+                    let _ = tx.send((
+                        led_buffer.clone(),
+                        dsp_result.mel_bands.to_vec(),
+                        dsp_result.beat,
+                    ));
+                }
+            }
 
             // Convert to DMX data
             for (i, led) in led_buffer.iter().enumerate() {
@@ -228,6 +328,8 @@ fn run_processing_loop(
             if let Err(e) = output.send(&led_buffer) {
                 log::warn!("Output send failed: {}", e);
             }
+
+            frame_count += 1;
         }
 
         // Rate limiting
