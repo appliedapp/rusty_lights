@@ -1,11 +1,12 @@
 # RustyLights Example Configuration
-# Copy to rusty_lights.toml and adjust as needed
+# Copy to /etc/rusty_lights.conf (or ./rusty_lights.toml) and adjust as needed
 
 [audio]
-backend = "pipewire"        # pipewire | alsa
+backend = "pipewire"        # pipewire | alsa | fifo
 device = "auto"             # "auto" or specific device name
 sample_rate = 48000
 chunk_size = 512
+# fifo_path = "/tmp/mpd.fifo"  # Path to named pipe (used when backend = "fifo")
 
 [dsp]
 fft_size = 512              # 256 | 512 | 1024
@@ -13,6 +14,7 @@ mel_bands = 24              # 16 - 32 recommended
 freq_min = 20               # Hz
 freq_max = 18000            # Hz
 smoothing = 0.7             # 0.0 - 1.0 (higher = smoother)
+beat_sensitivity = 1.5      # 1.0 - 3.0 (higher = fewer beats detected)
 
 [effect]
 name = "spectrum"           # energy | spectrum | scroll | reactive
@@ -31,6 +33,10 @@ fps = 60
 [output.leds]
 count = 300
 rgb_order = "GRB"           # RGB | GRB | BGR (depends on LED strip)
+
+[http]
+enabled = false               # Enable browser debug UI (requires --features http)
+port = 8080                    # Web UI port
 
 # Optional: Multiple output segments for complex setups
 # [[output.segments]]

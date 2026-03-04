@@ -3,15 +3,15 @@
 use clap::{Parser, Subcommand};
 use rusty_lights::config::Config;
 use rusty_lights::effects::EffectRegistry;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "rusty_lights")]
 #[command(author, version, about = "Audio-reactive LED controller", long_about = None)]
 struct Cli {
-    /// Configuration file path
-    #[arg(short, long, default_value = "rusty_lights.toml")]
-    config: PathBuf,
+    /// Configuration file path [default: /etc/rusty_lights.conf or ./rusty_lights.toml]
+    #[arg(short, long)]
+    config: Option<PathBuf>,
 
     /// Audio device (overrides config)
     #[arg(short, long)]
@@ -83,6 +83,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// Resolve the config file path using a fallback chain:
+/// 1. Explicit CLI path (`-c`)
+/// 2. `/etc/rusty_lights.conf`
+/// 3. `./rusty_lights.toml`
+fn resolve_config(cli_path: Option<&Path>) -> PathBuf {
+    if let Some(p) = cli_path {
+        return p.to_path_buf();
+    }
+    let etc = PathBuf::from("/etc/rusty_lights.conf");
+    if etc.exists() {
+        return etc;
+    }
+    PathBuf::from("rusty_lights.toml")
+}
+
 fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     use rusty_lights::Engine;
     use std::sync::atomic::Ordering;
@@ -90,11 +105,12 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     log::info!("Starting RustyLights visualizer...");
 
     // Load configuration
-    let mut config = if cli.config.exists() {
-        log::info!("Loading config from {:?}", cli.config);
-        Config::load(&cli.config)?
+    let config_path = resolve_config(cli.config.as_deref());
+    let mut config = if config_path.exists() {
+        log::info!("Loading config from {:?}", config_path);
+        Config::load(&config_path)?
     } else {
-        log::info!("Using default configuration");
+        log::info!("No config file found, using defaults");
         Config::default()
     };
 
@@ -115,6 +131,11 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         config.output.leds.count,
         config.output.fps
     );
+
+    #[cfg(feature = "http")]
+    if config.http.enabled {
+        log::info!("Web UI: http://localhost:{}", config.http.port);
+    }
 
     // Create and start engine
     let mut engine = Engine::new(config)?;
@@ -190,9 +211,10 @@ fn list_gradients() -> Result<(), Box<dyn std::error::Error>> {
 fn show_config(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     use rusty_lights::output::available_protocols;
 
-    let config = if cli.config.exists() {
-        println!("Configuration file: {:?}", cli.config);
-        Config::load(&cli.config)?
+    let config_path = resolve_config(cli.config.as_deref());
+    let config = if config_path.exists() {
+        println!("Configuration file: {:?}", config_path);
+        Config::load(&config_path)?
     } else {
         println!("Configuration file: (using defaults)");
         Config::default()
@@ -242,8 +264,9 @@ fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error
     log::info!("Sending test pattern to {} LEDs...", num_leds);
 
     // Load config for target address
-    let config = if cli.config.exists() {
-        Config::load(&cli.config)?
+    let config_path = resolve_config(cli.config.as_deref());
+    let config = if config_path.exists() {
+        Config::load(&config_path)?
     } else {
         Config::default()
     };
