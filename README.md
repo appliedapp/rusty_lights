@@ -1,5 +1,8 @@
 # RustyLights
 
+[![CI](https://github.com/appliedapp/rusty_lights/actions/workflows/ci.yml/badge.svg)](https://github.com/appliedapp/rusty_lights/actions/workflows/ci.yml)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+
 Resource-efficient audio-reactive LED visualizer written in Rust. Captures audio, processes it through a DSP pipeline, and outputs to LED strips via E1.31/sACN, DDP, or Art-Net.
 
 Designed to run on a Raspberry Pi with sub-5% CPU usage.
