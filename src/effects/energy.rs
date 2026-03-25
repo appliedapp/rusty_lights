@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Energy-based effect (bass=red, mid=green, high=blue)
 
 use super::{Effect, EffectError, Rgb};
@@ -36,19 +38,14 @@ impl Effect for EnergyEffect {
         // Divide mel bands into 3 regions: bass, mid, high
         let bands_per_region = mel_bands.len() / 3;
 
-        let bass: f32 = mel_bands[..bands_per_region]
-            .iter()
-            .sum::<f32>()
-            / bands_per_region as f32;
+        let bass: f32 = mel_bands[..bands_per_region].iter().sum::<f32>() / bands_per_region as f32;
 
         let mid: f32 = mel_bands[bands_per_region..bands_per_region * 2]
             .iter()
             .sum::<f32>()
             / bands_per_region as f32;
 
-        let high: f32 = mel_bands[bands_per_region * 2..]
-            .iter()
-            .sum::<f32>()
+        let high: f32 = mel_bands[bands_per_region * 2..].iter().sum::<f32>()
             / (mel_bands.len() - bands_per_region * 2) as f32;
 
         // Apply smoothing

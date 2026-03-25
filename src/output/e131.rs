@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! E1.31 (sACN) protocol implementation
 
 use super::{LedOutput, OutputError};

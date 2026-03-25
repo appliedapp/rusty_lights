@@ -1,0 +1,24 @@
+[Unit]
+Description=RustyLights audio-reactive LED visualizer
+After=sound.target mpd.service mpd.socket
+Requires=mpd.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/rusty_lights --config /etc/rusty_lights.conf
+Restart=on-failure
+RestartSec=5
+
+# ALSA device access
+SupplementaryGroups=audio
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

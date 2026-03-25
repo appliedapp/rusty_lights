@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Classic VU meter effect
 
 use super::{Effect, EffectError, Rgb};
@@ -71,8 +73,8 @@ impl Effect for VuMeterEffect {
             let third = mel_bands.len() / 3;
             let bass: f32 = mel_bands[..third].iter().sum::<f32>() / third as f32;
             let mid: f32 = mel_bands[third..third * 2].iter().sum::<f32>() / third as f32;
-            let high: f32 = mel_bands[third * 2..].iter().sum::<f32>()
-                / (mel_bands.len() - third * 2) as f32;
+            let high: f32 =
+                mel_bands[third * 2..].iter().sum::<f32>() / (mel_bands.len() - third * 2) as f32;
 
             let weighted = bass * bass_weight + mid * mid_weight + high * high_weight;
             (weighted / (bass_weight + mid_weight + high_weight)).clamp(0.0, 1.0)
@@ -98,7 +100,11 @@ impl Effect for VuMeterEffect {
 
         // Render
         for (i, led) in output.iter_mut().enumerate().take(self.num_leds) {
-            let idx = if self.reverse { self.num_leds - 1 - i } else { i };
+            let idx = if self.reverse {
+                self.num_leds - 1 - i
+            } else {
+                i
+            };
             let pos = idx as f32 / self.num_leds as f32;
 
             if idx < lit_count {

@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Configuration schema definitions
 
 use serde::Deserialize;
 
 /// Main configuration structure
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub audio: AudioConfig,
@@ -13,17 +15,7 @@ pub struct Config {
     pub http: HttpConfig,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            audio: AudioConfig::default(),
-            dsp: DspConfig::default(),
-            effect: EffectConfig::default(),
-            output: OutputConfig::default(),
-            http: HttpConfig::default(),
-        }
-    }
-}
+// Default is derived via serde(default) on all fields
 
 /// Audio capture configuration
 #[derive(Debug, Clone, Deserialize)]

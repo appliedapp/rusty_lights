@@ -1,19 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Core visualizer engine
 //!
 //! Orchestrates the full audio-to-LED pipeline.
 
-use crate::audio::{create_backend, AudioBackend, RingBuffer};
+use crate::audio::{AudioBackend, RingBuffer, create_backend};
 use crate::config::Config;
 use crate::dsp::{DspConfig, DspPipeline};
 use crate::effects::{EffectRegistry, Rgb};
-use crate::output::{create_output, RateLimiter};
+use crate::output::{RateLimiter, create_output};
 use crate::util::reorder_rgb;
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use thiserror::Error;
+
+type FrameData = (Vec<Rgb>, Vec<f32>, Option<f32>);
 
 /// Config update messages from the web UI
 #[derive(Debug)]
@@ -92,7 +96,7 @@ impl Engine {
 
         // Set up optional web server channels
         #[allow(unused_mut)]
-        let mut frame_tx: Option<mpsc::Sender<(Vec<Rgb>, Vec<f32>, Option<f32>)>> = None;
+        let mut frame_tx: Option<mpsc::Sender<FrameData>> = None;
         #[allow(unused_mut)]
         let mut config_rx: Option<mpsc::Receiver<ConfigUpdateMsg>> = None;
 
@@ -128,13 +132,9 @@ impl Engine {
         let handle = thread::Builder::new()
             .name("visualizer".to_string())
             .spawn(move || {
-                if let Err(e) = run_processing_loop(
-                    config,
-                    ring_buffer,
-                    running,
-                    frame_tx,
-                    config_rx,
-                ) {
+                if let Err(e) =
+                    run_processing_loop(config, ring_buffer, running, frame_tx, config_rx)
+                {
                     log::error!("Processing loop error: {}", e);
                 }
             })
@@ -201,7 +201,7 @@ fn run_processing_loop(
     config: Config,
     ring_buffer: Arc<RingBuffer<f32>>,
     running: Arc<AtomicBool>,
-    frame_tx: Option<mpsc::Sender<(Vec<Rgb>, Vec<f32>, Option<f32>)>>,
+    frame_tx: Option<mpsc::Sender<FrameData>>,
     config_rx: Option<mpsc::Receiver<ConfigUpdateMsg>>,
 ) -> Result<(), EngineError> {
     // Initialize DSP pipeline
@@ -262,15 +262,13 @@ fn run_processing_loop(
         if let Some(ref rx) = config_rx {
             while let Ok(msg) = rx.try_recv() {
                 match msg {
-                    ConfigUpdateMsg::SetEffect(name) => {
-                        match registry.create(&name, num_leds) {
-                            Ok(new_effect) => {
-                                effect = new_effect;
-                                log::info!("Effect changed to: {}", name);
-                            }
-                            Err(e) => log::warn!("Failed to set effect '{}': {}", name, e),
+                    ConfigUpdateMsg::SetEffect(name) => match registry.create(&name, num_leds) {
+                        Ok(new_effect) => {
+                            effect = new_effect;
+                            log::info!("Effect changed to: {}", name);
                         }
-                    }
+                        Err(e) => log::warn!("Failed to set effect '{}': {}", name, e),
+                    },
                     ConfigUpdateMsg::SetBrightness(v) => {
                         let _ = effect.set_param("brightness", v);
                     }
@@ -295,14 +293,14 @@ fn run_processing_loop(
             effect.render(dsp_result.mel_bands, dsp_result.beat, &mut led_buffer);
 
             // Send frame to web UI (~30fps: every other frame)
-            if let Some(ref tx) = frame_tx {
-                if frame_count % 2 == 0 {
-                    let _ = tx.send((
-                        led_buffer.clone(),
-                        dsp_result.mel_bands.to_vec(),
-                        dsp_result.beat,
-                    ));
-                }
+            if let Some(ref tx) = frame_tx
+                && frame_count.is_multiple_of(2)
+            {
+                let _ = tx.send((
+                    led_buffer.clone(),
+                    dsp_result.mel_bands.to_vec(),
+                    dsp_result.beat,
+                ));
             }
 
             // Convert to DMX data

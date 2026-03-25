@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! PipeWire audio capture backend
 
 use super::{AudioBackend, AudioError, RingBuffer};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
 use pipewire as pw;
@@ -67,13 +69,10 @@ impl PipeWireCapture {
                         let name: Option<&str> = props.get("node.name");
 
                         if let (Some(media_class), Some(name)) = (media_class, name) {
-                            let description: &str = props
-                                .get("node.description")
-                                .unwrap_or(name);
+                            let description: &str = props.get("node.description").unwrap_or(name);
 
                             if media_class.contains("Audio")
-                                && (media_class.contains("Source")
-                                    || media_class.contains("Sink"))
+                                && (media_class.contains("Source") || media_class.contains("Sink"))
                             {
                                 let mut devs = devices_clone.lock().unwrap();
                                 devs.push(AudioDevice {
@@ -91,7 +90,9 @@ impl PipeWireCapture {
 
         // Iterate briefly to enumerate devices (100ms timeout, 10 iterations)
         for _ in 0..10 {
-            mainloop.loop_().iterate(std::time::Duration::from_millis(10));
+            mainloop
+                .loop_()
+                .iterate(std::time::Duration::from_millis(10));
         }
 
         let result = devices.lock().unwrap().clone();
@@ -116,7 +117,9 @@ impl AudioBackend for PipeWireCapture {
         let handle = thread::Builder::new()
             .name("pipewire-audio".to_string())
             .spawn(move || {
-                if let Err(e) = run_capture_loop(sample_rate, channels, ring_buffer, running, &device) {
+                if let Err(e) =
+                    run_capture_loop(sample_rate, channels, ring_buffer, running, &device)
+                {
                     log::error!("PipeWire capture error: {}", e);
                 }
             })
@@ -124,7 +127,11 @@ impl AudioBackend for PipeWireCapture {
 
         self.thread_handle = Some(handle);
 
-        log::info!("PipeWire capture started: {}Hz, {} channels", self.sample_rate, self.channels);
+        log::info!(
+            "PipeWire capture started: {}Hz, {} channels",
+            self.sample_rate,
+            self.channels
+        );
         Ok(())
     }
 
@@ -136,7 +143,9 @@ impl AudioBackend for PipeWireCapture {
         self.running.store(false, Ordering::SeqCst);
 
         if let Some(handle) = self.thread_handle.take() {
-            handle.join().map_err(|_| AudioError::StreamError("Thread join failed".to_string()))?;
+            handle
+                .join()
+                .map_err(|_| AudioError::StreamError("Thread join failed".to_string()))?;
         }
 
         log::info!("PipeWire capture stopped");

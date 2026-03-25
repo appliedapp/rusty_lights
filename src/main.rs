@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! RustyLights - Audio-reactive LED controller
 
 use clap::{Parser, Subcommand};
@@ -7,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Parser)]
 #[command(name = "rusty_lights")]
-#[command(author, version, about = "Audio-reactive LED controller", long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"), about = "Audio-reactive LED controller", long_about = None)]
 struct Cli {
     /// Configuration file path [default: /etc/rusty_lights.conf or ./rusty_lights.toml]
     #[arg(short, long)]
@@ -123,9 +125,14 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     log::info!("Audio: {} ({})", config.audio.backend, config.audio.device);
-    log::info!("DSP: FFT={}, Mel bands={}", config.dsp.fft_size, config.dsp.mel_bands);
+    log::info!(
+        "DSP: FFT={}, Mel bands={}",
+        config.dsp.fft_size,
+        config.dsp.mel_bands
+    );
     log::info!("Effect: {}", config.effect.name);
-    log::info!("Output: {} to {} ({} LEDs @ {} FPS)",
+    log::info!(
+        "Output: {} to {} ({} LEDs @ {} FPS)",
         config.output.protocol,
         config.output.target,
         config.output.leds.count,
@@ -166,7 +173,10 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 fn list_devices() -> Result<(), Box<dyn std::error::Error>> {
     use rusty_lights::audio;
 
-    println!("Available audio backends: {:?}", audio::available_backends());
+    println!(
+        "Available audio backends: {:?}",
+        audio::available_backends()
+    );
     println!();
 
     let devices = audio::list_all_devices();
@@ -259,7 +269,7 @@ fn show_config(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
     use rusty_lights::effects::Rgb;
-    use rusty_lights::output::{create_output, RateLimiter};
+    use rusty_lights::output::{RateLimiter, create_output};
 
     log::info!("Sending test pattern to {} LEDs...", num_leds);
 
@@ -284,7 +294,11 @@ fn run_test_pattern(num_leds: usize, cli: &Cli) -> Result<(), Box<dyn std::error
         .map(|i| Rgb::from_hsv(i as f32 * 360.0 / num_leds as f32, 1.0, 0.5))
         .collect();
 
-    log::info!("Sending to {} via {}", config.output.target, config.output.protocol);
+    log::info!(
+        "Sending to {} via {}",
+        config.output.target,
+        config.output.protocol
+    );
 
     // Animate for 3 seconds (180 frames at 60fps)
     for frame in 0..180 {

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Signal smoothing and filtering
 
 /// Exponential Moving Average smoother

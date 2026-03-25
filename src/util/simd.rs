@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! SIMD-optimized operations
 
 /// Apply window function to samples using SIMD when available
@@ -112,6 +114,6 @@ mod tests {
         magnitude_squared(&real, &imag, &mut output);
 
         assert!((output[0] - 25.0).abs() < 0.001); // 3^2 + 4^2 = 25
-        assert!((output[1] - 1.0).abs() < 0.001);  // 0^2 + 1^2 = 1
+        assert!((output[1] - 1.0).abs() < 0.001); // 0^2 + 1^2 = 1
     }
 }

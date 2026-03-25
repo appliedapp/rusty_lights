@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Audio capture backends and ring buffer
 //!
 //! Provides audio capture from PipeWire (preferred) or ALSA (fallback).
@@ -163,15 +165,11 @@ pub fn list_all_devices() -> Vec<AudioDeviceInfo> {
 
 /// Check which audio backends are available at compile time
 pub fn available_backends() -> Vec<&'static str> {
-    let mut backends = Vec::new();
-
-    #[cfg(feature = "pipewire")]
-    backends.push("pipewire");
-
-    #[cfg(feature = "alsa")]
-    backends.push("alsa");
-
-    backends.push("fifo");
-
-    backends
+    vec![
+        #[cfg(feature = "pipewire")]
+        "pipewire",
+        #[cfg(feature = "alsa")]
+        "alsa",
+        "fifo",
+    ]
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! ChromaFreq effect — spectrum spread across LEDs with hue-mapped levels
 //!
 //! Each LED represents a frequency position. The energy level at that frequency

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! LED output protocols (E1.31, DDP, Art-Net)
 //!
 //! Provides multiple protocols for sending LED data:
@@ -5,14 +7,14 @@
 //! - **DDP**: Simple protocol, good for WLED
 //! - **Art-Net**: DMX over IP standard
 
-mod e131;
-mod ddp;
 mod artnet;
+mod ddp;
+mod e131;
 mod ratelimit;
 
-pub use e131::E131Sender;
-pub use ddp::DdpSender;
 pub use artnet::ArtNetSender;
+pub use ddp::DdpSender;
+pub use e131::E131Sender;
 pub use ratelimit::RateLimiter;
 
 use crate::effects::Rgb;
@@ -59,7 +61,7 @@ impl MultiUniverseOutput {
     pub fn new(target: &str, base_universe: u16, num_leds: usize) -> Result<Self, OutputError> {
         // 170 RGB LEDs per universe (510 channels, max 512)
         let leds_per_universe = 170;
-        let num_universes = (num_leds + leds_per_universe - 1) / leds_per_universe;
+        let num_universes = num_leds.div_ceil(leds_per_universe);
 
         let mut senders = Vec::with_capacity(num_universes);
         for i in 0..num_universes {

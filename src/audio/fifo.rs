@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! FIFO audio backend for MPD and other players that output raw PCM to a named pipe
 
 use super::{AudioBackend, AudioError, RingBuffer};
 use std::fs::File;
 use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
 /// FIFO audio backend
@@ -116,7 +118,10 @@ fn run_capture_loop(
     running: Arc<AtomicBool>,
     fifo_path: &str,
 ) -> Result<(), AudioError> {
-    log::info!("Opening FIFO: {} (will block until writer connects)", fifo_path);
+    log::info!(
+        "Opening FIFO: {} (will block until writer connects)",
+        fifo_path
+    );
 
     // Read size: 512 frames * 2 channels * 2 bytes = 2048 bytes
     let frame_bytes = channels as usize * std::mem::size_of::<i16>();

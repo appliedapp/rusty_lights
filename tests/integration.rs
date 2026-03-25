@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Integration tests for RustyLights
 //!
 //! These tests verify the full pipeline works correctly without requiring
@@ -48,7 +50,9 @@ fn test_effect_registry_completeness() {
     let effects = registry.list();
 
     // Verify expected effects are present
-    let expected = ["energy", "spectrum", "scroll", "reactive", "pulse", "vumeter"];
+    let expected = [
+        "energy", "spectrum", "scroll", "reactive", "pulse", "vumeter",
+    ];
     for name in &expected {
         assert!(
             effects.iter().any(|e| e == name),

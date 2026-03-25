@@ -1,6 +1,14 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Unified DSP pipeline combining FFT, Mel filterbank, and smoothing
 
-use super::{beat::BeatDetector, fft::FftProcessor, filters::{Agc, AttackReleaseSmoother}, mel::MelBank, DspError};
+use super::{
+    DspError,
+    beat::BeatDetector,
+    fft::FftProcessor,
+    filters::{Agc, AttackReleaseSmoother},
+    mel::MelBank,
+};
 
 /// Complete DSP processing pipeline
 ///

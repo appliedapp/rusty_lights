@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Configuration loading and schema definitions
 
 mod schema;
@@ -24,7 +26,7 @@ impl Config {
     }
 
     /// Load configuration from string
-    pub fn from_str(s: &str) -> Result<Self, ConfigError> {
+    pub fn parse(s: &str) -> Result<Self, ConfigError> {
         let config: Config = toml::from_str(s)?;
         Ok(config)
     }

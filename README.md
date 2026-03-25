@@ -6,7 +6,7 @@ Designed to run on a Raspberry Pi with sub-5% CPU usage.
 
 ## Features
 
-- **Audio backends**: PipeWire, ALSA, FIFO (for MPD/moOde integration)
+- **Audio backends**: PipeWire, ALSA, FIFO (for MPD-based players)
 - **DSP pipeline**: FFT, Mel filterbank, attack/release smoothing, AGC, beat detection
 - **7 effects**: energy, spectrum, scroll, reactive, pulse, vumeter, chromafreq
 - **7 gradients**: rainbow, fire, ocean, forest, sunset, party, lava
@@ -131,7 +131,24 @@ scp target/arm-unknown-linux-gnueabihf/release/rusty_lights pi@<pi-ip>:~/
 
 Add `--profile release-small` to any of the above commands for a smaller binary (uses `opt-level = "s"` and fat LTO).
 
-## Running as systemd Service
+## Installation
+
+### Quick install (Debian/Raspberry Pi OS)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/appliedapp/rusty_lights/main/install.sh | sudo sh
+```
+
+This downloads the latest `.deb` package for your architecture, installs the binary, config, and systemd service. Then:
+
+```bash
+sudo nano /etc/rusty_lights.conf          # adjust to your setup
+sudo systemctl enable --now rusty_lights
+```
+
+Pre-built `.deb` packages for amd64, arm64, and armhf are available on the [Releases](https://github.com/appliedapp/rusty_lights/releases) page.
+
+### Manual install
 
 Install the binary and config on your Pi, then create a service unit:
 
@@ -169,11 +186,17 @@ sudo systemctl status rusty_lights
 journalctl -u rusty_lights -f
 ```
 
-## moOde Audio Setup
+## MPD-Based Player Integration
 
-RustyLights works with [moOde Audio](https://moodeaudio.org/) for audio-reactive LED visualization from any source (MPD, Spotify Connect, AirPlay).
+The FIFO backend works with any audio player built on [MPD](https://www.musicpd.org/), including:
 
-### Option A: MPD FIFO (MPD only)
+- [moOde Audio](https://moodeaudio.org/)
+- [Volumio](https://volumio.com/)
+- [RuneAudio](https://www.runeaudio.com/)
+- [myMPD](https://jcorporation.github.io/myMPD/)
+- Plain MPD installations
+
+### Option A: MPD FIFO (MPD playback only)
 
 Add to `/etc/mpd.conf`:
 
@@ -196,9 +219,9 @@ fifo_path = "/tmp/mpd.fifo"
 sample_rate = 48000
 ```
 
-### Option B: ALSA Loopback (all sources)
+### Option B: ALSA Loopback (all sources, moOde example)
 
-This captures audio from all sources (MPD, Spotify, AirPlay, etc.) by routing through an ALSA loopback device.
+This captures audio from all sources (MPD, Spotify, AirPlay, etc.) by routing through an ALSA loopback device. Shown here for moOde, but the principle applies to any ALSA-based setup.
 
 1. Load the loopback module permanently:
    ```bash
@@ -217,6 +240,33 @@ This captures audio from all sources (MPD, Spotify, AirPlay, etc.) by routing th
    ```
 
 Note: The ALSA backend requires the binary to be built with `--features alsa`.
+
+## Architecture
+
+### Thread model (3 threads)
+
+1. **Main** — CLI (clap), config loading, signal handling
+2. **Audio** — PipeWire/ALSA/FIFO callback writes to lock-free SPSC ring buffer
+3. **Processing** — Reads ring buffer → DSP pipeline → effect render → protocol output
+
+### Data flow per frame
+
+```
+Audio callback → RingBuffer(SPSC, 8192 samples)
+    → FftProcessor(512-pt, Hanning window)
+    → MelBank(24 bands, 20-18kHz)
+    → Smoother(EMA) + BeatDetector(spectral flux)
+    → Effect.render(mel_bands, beat) → RGB buffer
+    → util::reorder_rgb() + gamma correction
+    → E131/DDP/ArtNet sender (UDP)
+```
+
+### Design constraints
+
+- Zero allocations per frame after initialization — reuse buffers
+- Target: <5% CPU on RPi 4, <150µs per frame
+- No async runtime — simple threading is sufficient
+- Lock-free audio path — no mutexes between audio and processing threads
 
 ## Effects
 
@@ -240,4 +290,4 @@ Note: The ALSA backend requires the binary to be built with `--features alsa`.
 
 ## License
 
-MIT
+This project is licensed under the [GNU General Public License v3.0](LICENSE).

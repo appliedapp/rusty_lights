@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! FFT processing with windowing
 
-use realfft::{num_complex::Complex, RealFftPlanner, RealToComplex};
+use realfft::{RealFftPlanner, RealToComplex, num_complex::Complex};
 use std::sync::Arc;
 
 use super::DspError;

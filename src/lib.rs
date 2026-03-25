@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! RustyLights - Resource-efficient audio-to-LED visualization
 //!
 //! This crate provides real-time audio analysis and LED control via E1.31/sACN and DDP protocols.

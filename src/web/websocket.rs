@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Per-client WebSocket read/write loop
 
 use std::net::TcpStream;
 use std::sync::mpsc;
 
-use tungstenite::protocol::Message;
 use tungstenite::WebSocket;
+use tungstenite::protocol::Message;
 
 use crate::engine::ConfigUpdateMsg;
 
@@ -40,8 +42,7 @@ pub fn run_client(
                 let _ = ws.send(Message::Pong(data));
             }
             Ok(_) => {}
-            Err(tungstenite::Error::Io(ref e))
-                if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(tungstenite::Error::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
             Err(_) => break,
         }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Lock-free SPSC ring buffer for audio samples
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -91,7 +93,9 @@ impl<T: Default + Clone> RingBuffer<T> {
             ptr.add(index).write(item);
         }
 
-        self.write_pos.value.store(write.wrapping_add(1), Ordering::Release);
+        self.write_pos
+            .value
+            .store(write.wrapping_add(1), Ordering::Release);
         true
     }
 
@@ -132,7 +136,9 @@ impl<T: Default + Clone> RingBuffer<T> {
             ptr.add(index).read()
         };
 
-        self.read_pos.value.store(read.wrapping_add(1), Ordering::Release);
+        self.read_pos
+            .value
+            .store(read.wrapping_add(1), Ordering::Release);
         Some(item)
     }
 

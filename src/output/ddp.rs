@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! DDP (Distributed Display Protocol) implementation
 //!
 //! DDP is a simple protocol for sending LED data over UDP.
@@ -86,8 +88,10 @@ impl DdpSender {
         self.packet_buffer[DDP_HEADER_SIZE..DDP_HEADER_SIZE + data_len]
             .copy_from_slice(&data[..data_len]);
 
-        self.socket
-            .send_to(&self.packet_buffer[..DDP_HEADER_SIZE + data_len], self.target)?;
+        self.socket.send_to(
+            &self.packet_buffer[..DDP_HEADER_SIZE + data_len],
+            self.target,
+        )?;
 
         Ok(())
     }
@@ -97,17 +101,14 @@ impl LedOutput for DdpSender {
     fn send(&mut self, leds: &[Rgb]) -> Result<(), OutputError> {
         // Fragment if necessary
         let max_leds_per_packet = DDP_MAX_DATA / 3;
-        let num_packets = (leds.len() + max_leds_per_packet - 1) / max_leds_per_packet;
+        let num_packets = leds.len().div_ceil(max_leds_per_packet);
 
         for (packet_idx, chunk) in leds.chunks(max_leds_per_packet).enumerate() {
             let offset = (packet_idx * max_leds_per_packet * 3) as u32;
             let is_last = packet_idx == num_packets - 1;
 
             // Build RGB data for this chunk
-            let chunk_data: Vec<u8> = chunk
-                .iter()
-                .flat_map(|led| [led.r, led.g, led.b])
-                .collect();
+            let chunk_data: Vec<u8> = chunk.iter().flat_map(|led| [led.r, led.g, led.b]).collect();
 
             self.send_packet(&chunk_data, offset, is_last)?;
         }
@@ -130,6 +131,9 @@ mod tests {
     fn test_ddp_max_leds() {
         // Check that we can handle the maximum LEDs per packet
         let max_leds = DDP_MAX_DATA / 3;
-        assert!(max_leds >= 400, "Should support at least 400 LEDs per packet");
+        assert!(
+            max_leds >= 400,
+            "Should support at least 400 LEDs per packet"
+        );
     }
 }

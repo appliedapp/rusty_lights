@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+# Add rusty_lights user to audio group if needed
+if ! getent group audio > /dev/null 2>&1; then
+    echo "Warning: 'audio' group not found. ALSA backend may not work."
+fi
+
+echo ""
+echo "RustyLights installed successfully!"
+echo ""
+echo "  Edit config:  sudo nano /etc/rusty_lights.conf"
+echo "  Start:        sudo systemctl start rusty_lights"
+echo "  Auto-start:   sudo systemctl enable rusty_lights"
+echo ""

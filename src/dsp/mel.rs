@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Mel-scale filterbank for perceptual frequency analysis
 
 use super::DspError;
@@ -20,6 +22,7 @@ struct MelFilter {
     /// Starting FFT bin
     start_bin: usize,
     /// Ending FFT bin (exclusive)
+    #[allow(dead_code)]
     end_bin: usize,
     /// Filter weights for bins in range [start_bin, end_bin)
     weights: Box<[f32]>,
@@ -46,7 +49,8 @@ impl MelBank {
         }
 
         let num_fft_bins = fft_size / 2 + 1;
-        let filters = Self::create_filterbank(num_bands, num_fft_bins, sample_rate, freq_min, freq_max);
+        let filters =
+            Self::create_filterbank(num_bands, num_fft_bins, sample_rate, freq_min, freq_max);
 
         Ok(Self {
             filters,
@@ -188,7 +192,11 @@ mod tests {
         for &freq in &test_freqs {
             let mel = MelBank::hz_to_mel(freq);
             let back = MelBank::mel_to_hz(mel);
-            assert!((freq - back).abs() < 0.01, "Conversion failed for {} Hz", freq);
+            assert!(
+                (freq - back).abs() < 0.01,
+                "Conversion failed for {} Hz",
+                freq
+            );
         }
     }
 

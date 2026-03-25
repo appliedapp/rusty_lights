@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! HTTP server with WebSocket upgrade and broadcast dispatcher
 
 use std::io::Write;
 use std::net::{TcpListener, TcpStream};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::Arc;
 use std::thread;
 
 use crate::effects::Rgb;
@@ -178,12 +180,10 @@ fn run_broadcast(
             Ok((leds, mel_bands, beat)) => {
                 encode_frame(&leds, &mel_bands, beat, &mut encode_buf);
 
-                clients.retain(|client| {
-                    match client.try_send(encode_buf.clone()) {
-                        Ok(_) => true,
-                        Err(mpsc::TrySendError::Full(_)) => true,
-                        Err(mpsc::TrySendError::Disconnected(_)) => false,
-                    }
+                clients.retain(|client| match client.try_send(encode_buf.clone()) {
+                    Ok(_) => true,
+                    Err(mpsc::TrySendError::Full(_)) => true,
+                    Err(mpsc::TrySendError::Disconnected(_)) => false,
                 });
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}

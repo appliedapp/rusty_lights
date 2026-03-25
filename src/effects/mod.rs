@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! LED effect engine
 //!
 //! Provides various audio-reactive LED effects:
@@ -8,26 +10,28 @@
 //! - **Pulse**: Beat-synchronized strobe
 //! - **VuMeter**: Classic VU meter display
 
-mod traits;
-mod energy;
-mod spectrum;
-mod scroll;
-mod reactive;
-mod pulse;
-mod vumeter;
 mod chromafreq;
+mod energy;
+mod pulse;
+mod reactive;
+mod scroll;
+mod spectrum;
+mod traits;
+mod vumeter;
 
-pub use traits::{Effect, Gradient, Rgb};
-pub use energy::EnergyEffect;
-pub use spectrum::SpectrumEffect;
-pub use scroll::ScrollEffect;
-pub use reactive::ReactiveEffect;
-pub use pulse::PulseEffect;
-pub use vumeter::VuMeterEffect;
 pub use chromafreq::ChromaFreqEffect;
+pub use energy::EnergyEffect;
+pub use pulse::PulseEffect;
+pub use reactive::ReactiveEffect;
+pub use scroll::ScrollEffect;
+pub use spectrum::SpectrumEffect;
+pub use traits::{Effect, Gradient, Rgb};
+pub use vumeter::VuMeterEffect;
 
 use std::collections::HashMap;
 use thiserror::Error;
+
+type EffectFactory = Box<dyn Fn(usize) -> Box<dyn Effect> + Send + Sync>;
 
 #[derive(Error, Debug)]
 pub enum EffectError {
@@ -39,7 +43,7 @@ pub enum EffectError {
 
 /// Effect factory for creating effects by name
 pub struct EffectRegistry {
-    factories: HashMap<&'static str, Box<dyn Fn(usize) -> Box<dyn Effect> + Send + Sync>>,
+    factories: HashMap<&'static str, EffectFactory>,
 }
 
 impl EffectRegistry {
@@ -50,12 +54,18 @@ impl EffectRegistry {
         };
 
         registry.register("energy", |num_leds| Box::new(EnergyEffect::new(num_leds)));
-        registry.register("spectrum", |num_leds| Box::new(SpectrumEffect::new(num_leds)));
+        registry.register("spectrum", |num_leds| {
+            Box::new(SpectrumEffect::new(num_leds))
+        });
         registry.register("scroll", |num_leds| Box::new(ScrollEffect::new(num_leds)));
-        registry.register("reactive", |num_leds| Box::new(ReactiveEffect::new(num_leds)));
+        registry.register("reactive", |num_leds| {
+            Box::new(ReactiveEffect::new(num_leds))
+        });
         registry.register("pulse", |num_leds| Box::new(PulseEffect::new(num_leds)));
         registry.register("vumeter", |num_leds| Box::new(VuMeterEffect::new(num_leds)));
-        registry.register("chromafreq", |num_leds| Box::new(ChromaFreqEffect::new(num_leds)));
+        registry.register("chromafreq", |num_leds| {
+            Box::new(ChromaFreqEffect::new(num_leds))
+        });
 
         registry
     }
@@ -172,7 +182,8 @@ mod tests {
         let with_beat = output[0];
 
         // Beat should increase brightness
-        let brightness_without = without_beat.r as u32 + without_beat.g as u32 + without_beat.b as u32;
+        let brightness_without =
+            without_beat.r as u32 + without_beat.g as u32 + without_beat.b as u32;
         let brightness_with = with_beat.r as u32 + with_beat.g as u32 + with_beat.b as u32;
         assert!(brightness_with >= brightness_without);
     }
@@ -199,7 +210,10 @@ mod tests {
         effect.render(&mel_bands, None, &mut output);
 
         // Should have some lit LEDs
-        let lit_count = output.iter().filter(|led| led.r > 0 || led.g > 0 || led.b > 0).count();
+        let lit_count = output
+            .iter()
+            .filter(|led| led.r > 0 || led.g > 0 || led.b > 0)
+            .count();
         assert!(lit_count > 0);
         assert!(lit_count < 60); // Not all should be lit at 50% level
     }

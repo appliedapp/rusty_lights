@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! DSP benchmarks
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use rusty_lights::dsp::{BeatDetector, DspConfig, DspPipeline, FftProcessor, MelBank, Smoother};
 
 fn bench_fft(c: &mut Criterion) {
@@ -33,11 +35,15 @@ fn bench_mel_bank(c: &mut Criterion) {
         // Generate fake magnitude spectrum
         let magnitude: Vec<f32> = (0..257).map(|i| (i as f32 / 257.0)).collect();
 
-        group.bench_with_input(BenchmarkId::new("process", num_bands), &num_bands, |b, _| {
-            b.iter(|| {
-                black_box(mel_bank.process(black_box(&magnitude)));
-            });
-        });
+        group.bench_with_input(
+            BenchmarkId::new("process", num_bands),
+            &num_bands,
+            |b, _| {
+                b.iter(|| {
+                    black_box(mel_bank.process(black_box(&magnitude)));
+                });
+            },
+        );
     }
 
     group.finish();
@@ -68,7 +74,9 @@ fn bench_beat_detector(c: &mut Criterion) {
     let mut detector = BeatDetector::new(num_bins, 43);
 
     // Generate fake magnitude spectrum
-    let magnitude: Vec<f32> = (0..num_bins).map(|i| (i as f32 / num_bins as f32)).collect();
+    let magnitude: Vec<f32> = (0..num_bins)
+        .map(|i| (i as f32 / num_bins as f32))
+        .collect();
 
     group.bench_function("process", |b| {
         b.iter(|| {

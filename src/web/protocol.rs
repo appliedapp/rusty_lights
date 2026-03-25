@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Binary frame protocol for WebSocket communication
 
 use crate::effects::Rgb;
@@ -9,12 +11,7 @@ use crate::effects::Rgb;
 /// - byte 1: mel band count (N)
 /// - bytes 2..2+N: mel bands quantized to 0-255
 /// - bytes 2+N..: RGB data (3 bytes per LED)
-pub fn encode_frame(
-    leds: &[Rgb],
-    mel_bands: &[f32],
-    beat: Option<f32>,
-    buf: &mut Vec<u8>,
-) {
+pub fn encode_frame(leds: &[Rgb], mel_bands: &[f32], beat: Option<f32>, buf: &mut Vec<u8>) {
     let mel_count = mel_bands.len().min(255);
     let total = 2 + mel_count + leds.len() * 3;
 

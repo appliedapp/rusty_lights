@@ -1,9 +1,11 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! ALSA audio capture backend (fallback for systems without PipeWire)
 
 use super::{AudioBackend, AudioError, RingBuffer};
 use std::ffi::CString;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
 
 use alsa::pcm::{Access, Format, HwParams, PCM};
@@ -59,15 +61,13 @@ impl AlsaCapture {
         let iface = CString::new("pcm").unwrap();
         if let Ok(hints) = alsa::device_name::HintIter::new(None, &iface) {
             for hint in hints {
-                if let Some(name) = hint.name {
-                    if let Some(desc) = hint.desc {
-                        // Only include capture devices
-                        if hint.direction != Some(alsa::Direction::Playback) {
-                            devices.push(AlsaDevice {
-                                name,
-                                description: desc.replace('\n', " "),
-                            });
-                        }
+                if let (Some(name), Some(desc)) = (hint.name, hint.desc) {
+                    // Only include capture devices
+                    if hint.direction != Some(alsa::Direction::Playback) {
+                        devices.push(AlsaDevice {
+                            name,
+                            description: desc.replace('\n', " "),
+                        });
                     }
                 }
             }
@@ -101,9 +101,14 @@ impl AudioBackend for AlsaCapture {
         let handle = thread::Builder::new()
             .name("alsa-audio".to_string())
             .spawn(move || {
-                if let Err(e) =
-                    run_capture_loop(sample_rate, channels, period_size, ring_buffer, running, &device)
-                {
+                if let Err(e) = run_capture_loop(
+                    sample_rate,
+                    channels,
+                    period_size,
+                    ring_buffer,
+                    running,
+                    &device,
+                ) {
                     log::error!("ALSA capture error: {}", e);
                 }
             })
@@ -163,6 +168,124 @@ pub struct AlsaDevice {
     pub description: String,
 }
 
+const MAX_INIT_RETRIES: u32 = 12;
+const RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Open and configure the ALSA PCM device, retrying if the device is not yet ready
+fn open_pcm(
+    device: &str,
+    sample_rate: u32,
+    channels: u32,
+    period_size: u32,
+    running: &AtomicBool,
+) -> Result<PCM, AudioError> {
+    for attempt in 1..=MAX_INIT_RETRIES {
+        if !running.load(Ordering::Relaxed) {
+            return Err(AudioError::InitError(
+                "Shutdown requested during init".to_string(),
+            ));
+        }
+
+        match try_open_pcm(device, sample_rate, channels, period_size) {
+            Ok(pcm) => return Ok(pcm),
+            Err(e) => {
+                if attempt == MAX_INIT_RETRIES {
+                    return Err(e);
+                }
+                log::warn!(
+                    "ALSA init attempt {}/{} failed: {}. Retrying in {}s...",
+                    attempt,
+                    MAX_INIT_RETRIES,
+                    e,
+                    RETRY_INTERVAL.as_secs()
+                );
+                std::thread::sleep(RETRY_INTERVAL);
+            }
+        }
+    }
+    unreachable!()
+}
+
+/// Single attempt to open and configure PCM
+fn try_open_pcm(
+    device: &str,
+    sample_rate: u32,
+    channels: u32,
+    period_size: u32,
+) -> Result<PCM, AudioError> {
+    let pcm = PCM::new(device, Direction::Capture, false).map_err(|e| {
+        AudioError::InitError(format!("Failed to open ALSA device '{}': {}", device, e))
+    })?;
+
+    {
+        let hwp = HwParams::any(&pcm)
+            .map_err(|e| AudioError::InitError(format!("Failed to get HW params: {}", e)))?;
+
+        hwp.set_access(Access::RWInterleaved)
+            .map_err(|e| AudioError::InitError(format!("Failed to set access: {}", e)))?;
+
+        hwp.set_format(Format::s16())
+            .map_err(|e| AudioError::InitError(format!("Failed to set format: {}", e)))?;
+
+        hwp.set_channels(channels)
+            .map_err(|e| AudioError::InitError(format!("Failed to set channels: {}", e)))?;
+
+        if let Err(e) = hwp.set_rate(sample_rate, ValueOr::Nearest) {
+            let min = hwp.get_rate_min().map_err(|e2| {
+                AudioError::InitError(format!(
+                    "Failed to set sample rate ({}) and cannot query min rate: {}",
+                    e, e2
+                ))
+            })?;
+            let max = hwp.get_rate_max().map_err(|e2| {
+                AudioError::InitError(format!(
+                    "Failed to set sample rate ({}) and cannot query max rate: {}",
+                    e, e2
+                ))
+            })?;
+            log::warn!(
+                "Cannot set {}Hz ({}), device supports {}–{}Hz. Using {}Hz.",
+                sample_rate,
+                e,
+                min,
+                max,
+                min
+            );
+            hwp.set_rate(min, ValueOr::Nearest).map_err(|e2| {
+                AudioError::InitError(format!(
+                    "Failed to set fallback sample rate {}Hz: {}",
+                    min, e2
+                ))
+            })?;
+        }
+
+        let actual_rate = hwp
+            .get_rate()
+            .map_err(|e| AudioError::InitError(format!("Failed to get actual rate: {}", e)))?;
+        if actual_rate != sample_rate {
+            log::warn!(
+                "ALSA negotiated sample rate {}Hz (requested {}Hz)",
+                actual_rate,
+                sample_rate
+            );
+        }
+
+        hwp.set_period_size(period_size as alsa::pcm::Frames, ValueOr::Nearest)
+            .map_err(|e| AudioError::InitError(format!("Failed to set period size: {}", e)))?;
+
+        hwp.set_buffer_size((period_size * 4) as alsa::pcm::Frames)
+            .map_err(|e| AudioError::InitError(format!("Failed to set buffer size: {}", e)))?;
+
+        pcm.hw_params(&hwp)
+            .map_err(|e| AudioError::InitError(format!("Failed to apply HW params: {}", e)))?;
+    }
+
+    pcm.prepare()
+        .map_err(|e| AudioError::InitError(format!("Failed to prepare PCM: {}", e)))?;
+
+    Ok(pcm)
+}
+
 /// Run the ALSA capture loop
 fn run_capture_loop(
     sample_rate: u32,
@@ -172,40 +295,7 @@ fn run_capture_loop(
     running: Arc<AtomicBool>,
     device: &str,
 ) -> Result<(), AudioError> {
-    // Open PCM device for capture
-    let pcm = PCM::new(device, Direction::Capture, false)
-        .map_err(|e| AudioError::InitError(format!("Failed to open ALSA device '{}': {}", device, e)))?;
-
-    // Configure hardware parameters
-    {
-        let hwp = HwParams::any(&pcm)
-            .map_err(|e| AudioError::InitError(format!("Failed to get HW params: {}", e)))?;
-
-        hwp.set_channels(channels)
-            .map_err(|e| AudioError::InitError(format!("Failed to set channels: {}", e)))?;
-
-        hwp.set_rate(sample_rate, ValueOr::Nearest)
-            .map_err(|e| AudioError::InitError(format!("Failed to set sample rate: {}", e)))?;
-
-        hwp.set_format(Format::s16())
-            .map_err(|e| AudioError::InitError(format!("Failed to set format: {}", e)))?;
-
-        hwp.set_access(Access::RWInterleaved)
-            .map_err(|e| AudioError::InitError(format!("Failed to set access: {}", e)))?;
-
-        hwp.set_period_size(period_size as i64, ValueOr::Nearest)
-            .map_err(|e| AudioError::InitError(format!("Failed to set period size: {}", e)))?;
-
-        hwp.set_buffer_size((period_size * 4) as i64)
-            .map_err(|e| AudioError::InitError(format!("Failed to set buffer size: {}", e)))?;
-
-        pcm.hw_params(&hwp)
-            .map_err(|e| AudioError::InitError(format!("Failed to apply HW params: {}", e)))?;
-    }
-
-    // Prepare the PCM
-    pcm.prepare()
-        .map_err(|e| AudioError::InitError(format!("Failed to prepare PCM: {}", e)))?;
+    let pcm = open_pcm(device, sample_rate, channels, period_size, &running)?;
 
     // Create buffer for reading samples
     let buffer_size = (period_size * channels) as usize;
@@ -216,12 +306,14 @@ fn run_capture_loop(
     // Main capture loop
     while running.load(Ordering::Relaxed) {
         // Read samples from ALSA
-        let io = pcm.io_i16().map_err(|e| AudioError::StreamError(e.to_string()))?;
+        let io = pcm
+            .io_i16()
+            .map_err(|e| AudioError::StreamError(e.to_string()))?;
 
         match io.readi(&mut buffer) {
             Ok(frames) => {
                 // Convert i16 to f32 and mix to mono
-                let samples_read = frames as usize * channels as usize;
+                let samples_read = frames * channels as usize;
 
                 if channels == 2 {
                     for chunk in buffer[..samples_read].chunks(2) {

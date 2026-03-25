@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Frame rate limiting for consistent output timing
 
 use std::time::{Duration, Instant};

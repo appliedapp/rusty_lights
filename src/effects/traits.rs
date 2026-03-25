@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 appliedappliance GmbH
 //! Effect trait and RGB color type
 
 use super::EffectError;
@@ -27,7 +29,11 @@ impl Rgb {
     /// Create white
     #[inline]
     pub const fn white() -> Self {
-        Self { r: 255, g: 255, b: 255 }
+        Self {
+            r: 255,
+            g: 255,
+            b: 255,
+        }
     }
 
     /// Create from HSV values
@@ -227,16 +233,22 @@ impl Gradient {
 
     /// List available gradient names
     pub fn list_names() -> &'static [&'static str] {
-        &["rainbow", "fire", "ocean", "forest", "sunset", "party", "lava"]
+        &[
+            "rainbow", "fire", "ocean", "forest", "sunset", "party", "lava",
+        ]
     }
 
     /// Create a gradient from a list of colors
     pub fn from_colors(colors: &[Rgb], steps: usize) -> Self {
         if colors.is_empty() {
-            return Self { colors: vec![Rgb::black()] };
+            return Self {
+                colors: vec![Rgb::black()],
+            };
         }
         if colors.len() == 1 {
-            return Self { colors: vec![colors[0]; steps] };
+            return Self {
+                colors: vec![colors[0]; steps],
+            };
         }
 
         let mut result = Vec::with_capacity(steps);
