@@ -290,6 +290,7 @@ Audio callback → RingBuffer(SPSC, 8192 samples)
 | `smoothing` | LED fade-out speed (release time) | 0.0 (instant) - 1.0 (very slow) |
 | `beat_sensitivity` | Beat detection threshold | 1.0 (very sensitive) - 3.0 (only strong beats) |
 | `brightness` | Overall LED brightness | 0.0 - 1.0 |
+| `idle_timeout` | Close output after N minutes of silence | 0 (disabled) - any value in minutes |
 
 ## License
 

@@ -229,7 +229,7 @@ fn run_processing_loop(
     }
 
     // Initialize output
-    let mut output = create_output(
+    let output = create_output(
         &config.output.protocol,
         &config.output.target,
         config.output.universe,
@@ -248,6 +248,14 @@ fn run_processing_loop(
     let mut dmx_buffer = vec![0u8; num_leds * 3];
 
     let mut frame_count: u64 = 0;
+    let mut output: Option<Box<dyn crate::output::LedOutput>> = Some(output);
+    let idle_timeout = if config.output.idle_timeout > 0 {
+        Some(std::time::Duration::from_secs(config.output.idle_timeout * 60))
+    } else {
+        None
+    };
+    let mut last_audio_time = std::time::Instant::now();
+    let mut idle = false;
 
     log::info!(
         "Processing loop started: {} LEDs, {} FPS, {} effect",
@@ -286,6 +294,24 @@ fn run_processing_loop(
         let samples_read = ring_buffer.pop_slice(&mut audio_buffer);
 
         if samples_read >= fft_size {
+            last_audio_time = std::time::Instant::now();
+
+            // Reconnect output if we were idle
+            if idle {
+                log::info!("Audio resumed, reconnecting output");
+                match create_output(
+                    &config.output.protocol,
+                    &config.output.target,
+                    config.output.universe,
+                ) {
+                    Ok(new_output) => {
+                        output = Some(new_output);
+                        idle = false;
+                    }
+                    Err(e) => log::warn!("Failed to reconnect output: {}", e),
+                }
+            }
+
             // Process through DSP pipeline
             let dsp_result = dsp.process(&audio_buffer);
 
@@ -323,11 +349,28 @@ fn run_processing_loop(
             }
 
             // Send to output
-            if let Err(e) = output.send(&led_buffer) {
+            if let Some(ref mut out) = output
+                && let Err(e) = out.send(&led_buffer)
+            {
                 log::warn!("Output send failed: {}", e);
             }
 
             frame_count += 1;
+        } else if let Some(timeout) = idle_timeout
+            && !idle
+            && last_audio_time.elapsed() >= timeout
+        {
+            log::info!(
+                "No audio for {} min, closing output connection",
+                config.output.idle_timeout
+            );
+            // Send black frame before disconnecting
+            if let Some(ref mut out) = output {
+                led_buffer.fill(Rgb::black());
+                let _ = out.send(&led_buffer);
+            }
+            output = None;
+            idle = true;
         }
 
         // Rate limiting
@@ -336,7 +379,9 @@ fn run_processing_loop(
 
     // Turn off LEDs on shutdown
     led_buffer.fill(Rgb::black());
-    let _ = output.send(&led_buffer);
+    if let Some(ref mut out) = output {
+        let _ = out.send(&led_buffer);
+    }
 
     log::info!(
         "Processing loop stopped. Frames: {}, Dropped: {}",

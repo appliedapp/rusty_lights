@@ -121,6 +121,9 @@ pub struct OutputConfig {
     pub universe: u16,
     /// Target frames per second
     pub fps: u32,
+    /// Idle timeout in minutes (0 = disabled). Closes the connection when no
+    /// audio is received for this duration and reconnects when audio resumes.
+    pub idle_timeout: u64,
     /// LED configuration
     pub leds: LedConfig,
     /// Optional output segments for multi-controller setups
@@ -135,6 +138,7 @@ impl Default for OutputConfig {
             target: "239.255.0.1".to_string(),
             universe: 1,
             fps: 60,
+            idle_timeout: 0,
             leds: LedConfig::default(),
             segments: Vec::new(),
         }

@@ -29,6 +29,7 @@ protocol = "e131"           # e131 | ddp | artnet
 target = "239.255.0.1"      # Multicast address or IP of LED controller
 universe = 1
 fps = 60
+idle_timeout = 0            # Minutes without audio before closing connection (0 = disabled)
 
 [output.leds]
 count = 300
