@@ -250,7 +250,9 @@ fn run_processing_loop(
     let mut frame_count: u64 = 0;
     let mut output: Option<Box<dyn crate::output::LedOutput>> = Some(output);
     let idle_timeout = if config.output.idle_timeout > 0 {
-        Some(std::time::Duration::from_secs(config.output.idle_timeout * 60))
+        Some(std::time::Duration::from_secs(
+            config.output.idle_timeout * 60,
+        ))
     } else {
         None
     };
