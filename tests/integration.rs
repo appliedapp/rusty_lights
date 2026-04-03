@@ -113,7 +113,7 @@ fn test_default_config() {
     assert!(config.audio.sample_rate >= 44100);
     assert!(config.dsp.fft_size.is_power_of_two());
     assert!(config.dsp.mel_bands >= 8);
-    assert!(config.output.leds.count > 0);
+    assert!(config.output.leds.led_count() > 0);
     assert!(config.output.fps > 0);
 }
 

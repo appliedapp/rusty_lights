@@ -146,21 +146,27 @@ impl Default for OutputConfig {
 }
 
 /// LED strip configuration
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Fields are optional so that values not explicitly set in the config
+/// can be auto-detected from WLED devices.
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct LedConfig {
-    /// Total number of LEDs
-    pub count: usize,
-    /// RGB byte order: "RGB", "GRB", "BGR", etc.
-    pub rgb_order: String,
+    /// Total number of LEDs (auto-detected from WLED when absent)
+    pub count: Option<usize>,
+    /// RGB byte order: "RGB", "GRB", "BGR", etc. (auto-detected from WLED when absent)
+    pub rgb_order: Option<String>,
 }
 
-impl Default for LedConfig {
-    fn default() -> Self {
-        Self {
-            count: 300,
-            rgb_order: "GRB".to_string(),
-        }
+impl LedConfig {
+    /// Resolved LED count, falling back to 300 if not configured.
+    pub fn led_count(&self) -> usize {
+        self.count.unwrap_or(300)
+    }
+
+    /// Resolved RGB order, falling back to "GRB" if not configured.
+    pub fn order(&self) -> &str {
+        self.rgb_order.as_deref().unwrap_or("GRB")
     }
 }
 

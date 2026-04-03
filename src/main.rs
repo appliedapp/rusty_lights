@@ -124,6 +124,12 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         config.effect.name = effect.clone();
     }
 
+    // Auto-detect LED config from WLED device (only fills in values not explicitly set)
+    #[cfg(feature = "wled")]
+    if config.output.protocol == "ddp" {
+        rusty_lights::wled::apply_wled_config(&config.output.target, &mut config.output.leds);
+    }
+
     log::info!("Audio: {} ({})", config.audio.backend, config.audio.device);
     log::info!(
         "DSP: FFT={}, Mel bands={}",
@@ -135,7 +141,7 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         "Output: {} to {} ({} LEDs @ {} FPS)",
         config.output.protocol,
         config.output.target,
-        config.output.leds.count,
+        config.output.leds.led_count(),
         config.output.fps
     );
 
@@ -258,8 +264,8 @@ fn show_config(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     println!();
     println!("[output.leds]");
-    println!("  count = {}", config.output.leds.count);
-    println!("  rgb_order = \"{}\"", config.output.leds.rgb_order);
+    println!("  count = {}", config.output.leds.led_count());
+    println!("  rgb_order = \"{}\"", config.output.leds.order());
 
     println!();
     println!("Available protocols: {:?}", available_protocols());

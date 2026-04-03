@@ -218,7 +218,7 @@ fn run_processing_loop(
 
     // Initialize effect
     let registry = EffectRegistry::new();
-    let mut effect = registry.create(&config.effect.name, config.output.leds.count)?;
+    let mut effect = registry.create(&config.effect.name, config.output.leds.led_count())?;
 
     // Apply effect parameters
     if let Some(brightness) = config.effect.params.brightness {
@@ -240,8 +240,8 @@ fn run_processing_loop(
 
     // Allocate buffers
     let fft_size = config.dsp.fft_size;
-    let num_leds = config.output.leds.count;
-    let rgb_order = config.output.leds.rgb_order.clone();
+    let num_leds = config.output.leds.led_count();
+    let rgb_order = config.output.leds.order().to_string();
 
     let mut audio_buffer = vec![0.0f32; fft_size];
     let mut led_buffer = vec![Rgb::black(); num_leds];

@@ -12,6 +12,9 @@ pub mod engine;
 pub mod output;
 pub mod util;
 
+#[cfg(feature = "wled")]
+pub mod wled;
+
 #[cfg(feature = "http")]
 pub mod web;
 
