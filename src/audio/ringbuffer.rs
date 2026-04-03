@@ -99,21 +99,40 @@ impl<T: Default + Clone> RingBuffer<T> {
         true
     }
 
-    /// Push multiple items to the buffer
+    /// Push multiple items to the buffer using bulk copy
     ///
     /// Returns the number of items actually written.
     pub fn push_slice(&self, items: &[T]) -> usize
     where
         T: Copy,
     {
-        let mut written = 0;
-        for &item in items {
-            if !self.push(item) {
-                break;
-            }
-            written += 1;
+        let write = self.write_pos.value.load(Ordering::Relaxed);
+        let read = self.read_pos.value.load(Ordering::Acquire);
+        let available = self.capacity - write.wrapping_sub(read);
+        let count = items.len().min(available);
+
+        if count == 0 {
+            return 0;
         }
-        written
+
+        let mask = self.capacity - 1;
+        let start = write & mask;
+        let ptr = self.buffer.as_ptr() as *mut T;
+
+        // Copy in one or two chunks depending on wrap-around
+        let first = count.min(self.capacity - start);
+        // SAFETY: exclusive write access, indices within bounds
+        unsafe {
+            std::ptr::copy_nonoverlapping(items.as_ptr(), ptr.add(start), first);
+            if first < count {
+                std::ptr::copy_nonoverlapping(items.as_ptr().add(first), ptr, count - first);
+            }
+        }
+
+        self.write_pos
+            .value
+            .store(write.wrapping_add(count), Ordering::Release);
+        count
     }
 
     /// Pop a single item from the buffer
@@ -142,24 +161,40 @@ impl<T: Default + Clone> RingBuffer<T> {
         Some(item)
     }
 
-    /// Read multiple items into a slice
+    /// Read multiple items into a slice using bulk copy
     ///
     /// Returns the number of items actually read.
     pub fn pop_slice(&self, output: &mut [T]) -> usize
     where
         T: Copy,
     {
-        let mut read_count = 0;
-        for slot in output.iter_mut() {
-            match self.pop() {
-                Some(item) => {
-                    *slot = item;
-                    read_count += 1;
-                }
-                None => break,
+        let read = self.read_pos.value.load(Ordering::Relaxed);
+        let write = self.write_pos.value.load(Ordering::Acquire);
+        let available = write.wrapping_sub(read);
+        let count = output.len().min(available);
+
+        if count == 0 {
+            return 0;
+        }
+
+        let mask = self.capacity - 1;
+        let start = read & mask;
+        let ptr = self.buffer.as_ptr();
+
+        // Copy in one or two chunks depending on wrap-around
+        let first = count.min(self.capacity - start);
+        // SAFETY: exclusive read access, indices within bounds
+        unsafe {
+            std::ptr::copy_nonoverlapping(ptr.add(start), output.as_mut_ptr(), first);
+            if first < count {
+                std::ptr::copy_nonoverlapping(ptr, output.as_mut_ptr().add(first), count - first);
             }
         }
-        read_count
+
+        self.read_pos
+            .value
+            .store(read.wrapping_add(count), Ordering::Release);
+        count
     }
 
     /// Clear all items from the buffer

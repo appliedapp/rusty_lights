@@ -292,6 +292,14 @@ Audio callback → RingBuffer(SPSC, 8192 samples)
 | `brightness` | Overall LED brightness | 0.0 - 1.0 |
 | `idle_timeout` | Close output after N minutes of silence | 0 (disabled) - any value in minutes |
 
+## Roadmap
+
+- **LED layouts** — Support for matrix, ring, and custom LED arrangements with coordinate mapping (serpentine wiring, 2D/polar coordinates). Enables layout-aware effects like matrix equalizers and radial pulses.
+- **WLED auto-discovery** — Find WLED controllers via mDNS, auto-configure LED count, layout (strip/matrix), and RGB order from the WLED JSON API. Zero-config setup with `target = "auto"`.
+- **Performance optimizations** — Bulk-copy ring buffer, eliminate per-frame allocations in DDP sender, remove redundant RGB↔DMX conversion in processing loop
+- **Scenes/presets** — Save and recall effect + parameter combinations
+- **Multi-device output** — Drive multiple LED controllers simultaneously
+
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).

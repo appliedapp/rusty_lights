@@ -52,6 +52,10 @@ criterion = { version = "0.6", features = ["html_reports"] }
 name = "dsp_bench"
 harness = false
 
+[[bench]]
+name = "ringbuffer_bench"
+harness = false
+
 [package.metadata.deb]
 section = "sound"
 priority = "optional"
