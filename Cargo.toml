@@ -15,7 +15,7 @@ pipewire = ["dep:pipewire"]
 alsa = ["dep:alsa"]
 simd = []  # Explicit SIMD optimizations
 http = ["dep:tungstenite", "dep:serde_json"]
-wled = ["dep:ureq", "dep:serde_json"]
+wled = ["dep:ureq", "dep:serde_json", "dep:mdns-sd"]
 
 [dependencies]
 # Audio
@@ -41,6 +41,7 @@ socket2 = { version = "0.6", features = ["all"] }
 tungstenite = { version = "0.26", optional = true }
 serde_json = { version = "1.0", optional = true }
 ureq = { version = "3", features = ["json"], optional = true }
+mdns-sd = { version = "0.19", optional = true }
 
 # Utilities
 thiserror = "2.0"

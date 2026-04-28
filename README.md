@@ -295,12 +295,12 @@ Audio callback → RingBuffer(SPSC, 8192 samples)
 ## Roadmap
 
 - **LED layouts** — Support for matrix, ring, and custom LED arrangements with coordinate mapping (serpentine wiring, 2D/polar coordinates). Enables layout-aware effects like matrix equalizers and radial pulses.
-- **WLED auto-discovery** — Find WLED controllers via mDNS, auto-configure LED count, layout (strip/matrix), and RGB order from the WLED JSON API. Zero-config setup with `target = "auto"`.
+- **WLED auto-discovery** — ~~Find WLED controller via mDNS~~, ~~auto-configure LED count~~ and ~~RGB order~~ from the WLED JSON API. ~~Zero-config setup with `target = "auto"`~~. Remaining: layout (strip/matrix) detection, multi-device discovery.
 - **Spectrogram effect** — Scrolling frequency-time display across the LED strip using full 257-bin FFT resolution.
 - **Multi-band onset effect** — Independent beat detection per frequency region (kick, snare, hi-hat) using per-band spectral flux. Qualitative leap beyond single global beat triggers.
 - **Performance optimizations** — ~~Bulk-copy ring buffer~~, eliminate per-frame allocations in DDP sender, remove redundant RGB↔DMX conversion in processing loop
 - **Scenes/presets** — Save and recall effect + parameter combinations
-- **Multi-device output** — Drive multiple LED controllers simultaneously
+- **Multi-device output** — Drive multiple LED controllers simultaneously via segment-to-target mapping. `MultiSegmentOutput` wraps multiple outputs behind the `LedOutput` trait, slicing the LED buffer per segment. Auto-discovery finds all WLEDs on the network and chains their LED counts.
 
 ## License
 

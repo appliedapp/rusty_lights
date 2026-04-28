@@ -2,11 +2,15 @@
 // Copyright (c) 2026 appliedappliance GmbH
 //! WLED device auto-configuration
 //!
-//! Fetches LED configuration from a WLED device's JSON API and fills in
-//! any values not explicitly set in the local config.
+//! Discovers WLED controllers via mDNS and fetches LED configuration from
+//! the JSON API. Only fills in values not explicitly set in the local config.
 
 use crate::config::LedConfig;
 use serde::Deserialize;
+use std::time::Duration;
+
+const MDNS_SERVICE_TYPE: &str = "_wled._tcp.local.";
+const MDNS_BROWSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Deserialize)]
 struct WledInfo {
@@ -38,6 +42,68 @@ struct WledHwLed {
 struct WledLedInstance {
     #[serde(default)]
     order: u8,
+}
+
+/// Discover a WLED device via mDNS and return its IP address.
+///
+/// Browses for `_wled._tcp.local.` services and returns the first
+/// device found within the timeout period.
+pub fn discover_wled() -> Option<String> {
+    use mdns_sd::{ServiceDaemon, ServiceEvent};
+
+    log::info!("Searching for WLED devices via mDNS ({MDNS_BROWSE_TIMEOUT:?} timeout)...");
+
+    let mdns = match ServiceDaemon::new() {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("Could not start mDNS daemon: {e}");
+            return None;
+        }
+    };
+
+    let receiver = match mdns.browse(MDNS_SERVICE_TYPE) {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("Could not browse for WLED services: {e}");
+            let _ = mdns.shutdown();
+            return None;
+        }
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let mut devices: Vec<(String, String)> = Vec::new();
+
+    loop {
+        match receiver.recv_timeout(MDNS_BROWSE_TIMEOUT) {
+            Ok(ServiceEvent::ServiceResolved(info)) => {
+                if let Some(addr) = info.get_addresses().iter().next() {
+                    let ip = addr.to_string();
+                    if seen.insert(ip.clone()) {
+                        devices.push((info.get_fullname().to_string(), ip));
+                    }
+                }
+            }
+            Ok(_) => continue,
+            Err(_) => break,
+        }
+    }
+
+    let _ = mdns.shutdown();
+
+    if devices.is_empty() {
+        log::warn!("No WLED devices found on the network");
+        return None;
+    }
+
+    for (name, ip) in &devices {
+        log::info!("Found WLED device \"{name}\" at {ip}");
+    }
+
+    if devices.len() > 1 {
+        log::info!("Using first device, {} others available", devices.len() - 1);
+    }
+
+    Some(devices.into_iter().next().unwrap().1)
 }
 
 /// Fetch device info from a WLED controller and merge into `led_config`.

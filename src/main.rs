@@ -124,9 +124,21 @@ fn run_visualizer(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         config.effect.name = effect.clone();
     }
 
-    // Auto-detect LED config from WLED device (only fills in values not explicitly set)
+    // WLED auto-discovery and config detection
     #[cfg(feature = "wled")]
-    if config.output.protocol == "ddp" {
+    if config.output.target.eq_ignore_ascii_case("auto") {
+        if let Some(ip) = rusty_lights::wled::discover_wled() {
+            config.output.target = ip;
+            if config.output.protocol == "e131" {
+                log::info!("Switching protocol to DDP for discovered WLED device");
+                config.output.protocol = "ddp".to_string();
+            }
+            rusty_lights::wled::apply_wled_config(&config.output.target, &mut config.output.leds);
+        } else {
+            log::error!("No WLED device found on the network");
+            return Err("WLED auto-discovery failed".into());
+        }
+    } else if config.output.protocol == "ddp" {
         rusty_lights::wled::apply_wled_config(&config.output.target, &mut config.output.leds);
     }
 
