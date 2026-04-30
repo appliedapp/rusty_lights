@@ -88,12 +88,17 @@ brightness = 1.0
 
 [output]
 protocol = "ddp"                # e131 | ddp | artnet
-target = "192.168.1.100"        # IP of LED controller (or multicast for E1.31)
+target = "192.168.1.100"        # IP of LED controller, "auto" for WLED mDNS discovery
 fps = 60
+idle_timeout = 0                # Minutes without audio before closing connection (0 = disabled)
 
 [output.leds]
-count = 240
-rgb_order = "GRB"               # RGB | GRB | BGR | RBG | BRG | GBR
+count = 240                     # Optional with WLED — auto-detected from /json/info if omitted
+rgb_order = "GRB"               # Optional with WLED — auto-detected from /json/cfg if omitted
+
+[http]
+enabled = false                 # Web UI with live visualization and effect controls
+port = 8080
 ```
 
 ## Cross-Compilation for Raspberry Pi
@@ -295,12 +300,22 @@ Audio callback → RingBuffer(SPSC, 8192 samples)
 ## Roadmap
 
 - **LED layouts** — Support for matrix, ring, and custom LED arrangements with coordinate mapping (serpentine wiring, 2D/polar coordinates). Enables layout-aware effects like matrix equalizers and radial pulses.
+- **Ring topology** — Explicit `layout = "ring"` config so effects can use the ring's continuous topology (radial beats, mirrored from a "top" position). WLED treats rings as linear strips by default, so we need our own config.
 - **WLED auto-discovery** — ~~Find WLED controller via mDNS~~, ~~auto-configure LED count~~ and ~~RGB order~~ from the WLED JSON API. ~~Zero-config setup with `target = "auto"`~~. Remaining: layout (strip/matrix) detection, multi-device discovery.
 - **Spectrogram effect** — Scrolling frequency-time display across the LED strip using full 257-bin FFT resolution.
 - **Multi-band onset effect** — Independent beat detection per frequency region (kick, snare, hi-hat) using per-band spectral flux. Qualitative leap beyond single global beat triggers.
 - **Performance optimizations** — ~~Bulk-copy ring buffer~~, eliminate per-frame allocations in DDP sender, remove redundant RGB↔DMX conversion in processing loop
+- **2D matrix effects** — Compute-intensive effects for LED matrices that go far beyond microcontroller capabilities:
+  - *Fluid Simulation* — 2D Navier-Stokes fluid dynamics, beats inject colored vortices, frequency bands control color and viscosity
+  - *Shockwave Ripples* — Beat-triggered concentric waves with interference patterns, frequency maps to color
+  - *Particle Fireworks* — Beat-spawned particles with gravity, bass creates explosions, hi-hat creates sparks
+  - *Radial Spectrum* — Circular frequency display from center outward, beats pulse from the core
+  - *Audio Terrain* — Perspective-rendered 3D heightmap of the frequency spectrum, slowly rotating
+  - *Plasma Morph* — Classic plasma with all parameters modulated by audio analysis
+  - *Matrix Rain* — Beat-triggered drops, tempo controls speed, frequency controls color
+  - *Game of Life + Audio* — Cellular automata seeded by beats, frequency alters evolution rules
 - **Scenes/presets** — Save and recall effect + parameter combinations
-- **Multi-device output** — Drive multiple LED controllers simultaneously via segment-to-target mapping. `MultiSegmentOutput` wraps multiple outputs behind the `LedOutput` trait, slicing the LED buffer per segment. Auto-discovery finds all WLEDs on the network and chains their LED counts.
+- **Multi-device output** — Drive multiple LED controllers simultaneously. Three modes: **mirror** (same frame to all devices, default for `target = "auto"`), **chain** (devices form one continuous strip, requires explicit config), **segments** (manual LED-range-to-device mapping). `MultiSegmentOutput` wraps multiple outputs behind the `LedOutput` trait.
 
 ## License
 
