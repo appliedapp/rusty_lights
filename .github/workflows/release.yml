@@ -106,21 +106,83 @@ jobs:
 
       - name: Build RPM with mock
         run: |
-          # Latest stable Fedora mock config (skip rawhide/eln/branched)
-          MOCK_CFG=$(ls /etc/mock/fedora-*-x86_64.cfg \
-            | grep -vE 'rawhide|eln|branched' \
-            | sort -V | tail -1 \
-            | xargs -n1 basename | sed 's/\.cfg$//')
+          # Pick the latest stable Fedora mock config, resolving symlinks so
+          # that aliases like fedora-N -> fedora-rawhide are excluded.
+          MOCK_CFG=""
+          for cfg in $(ls /etc/mock/fedora-*-x86_64.cfg | sort -V -r); do
+            target=$(readlink -f "$cfg")
+            base=$(basename "$cfg" .cfg)
+            tbase=$(basename "$target" .cfg)
+            if echo "$base $tbase" | grep -qE 'rawhide|eln|branched'; then
+              continue
+            fi
+            MOCK_CFG="$base"
+            break
+          done
+          if [ -z "$MOCK_CFG" ]; then
+            echo "::error::No suitable stable Fedora mock config found"
+            exit 1
+          fi
           echo "Using mock config: ${MOCK_CFG}"
           echo "MOCK_CFG=${MOCK_CFG}" >> "$GITHUB_ENV"
           mock --verbose -r "${MOCK_CFG}" --isolation=simple \
             --rebuild ~/rpmbuild/SRPMS/rusty_lights-*.src.rpm
 
+      - name: List mock results
+        if: always()
+        run: |
+          echo "=== /var/lib/mock/${MOCK_CFG}/result ==="
+          ls -lh "/var/lib/mock/${MOCK_CFG}/result" || true
+          echo "=== all mock result dirs ==="
+          ls -lh /var/lib/mock/*/result 2>/dev/null || true
+
+      - name: Upload mock logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-logs
+          path: |
+            /var/lib/mock/*/result/*.log
+          if-no-files-found: ignore
+
+      - name: List mock result directory
+        if: always()
+        run: |
+          echo "::group::Result dir: ${RESULT_DIR}"
+          ls -la "${RESULT_DIR}" || true
+          echo "::endgroup::"
+          echo "::group::Default mock root paths"
+          ls -la /var/lib/mock/ || true
+          for d in /var/lib/mock/*/result; do
+            [ -d "$d" ] || continue
+            echo "--- $d ---"
+            ls -la "$d"
+          done
+          echo "::endgroup::"
+
+      - name: Upload mock logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mock-logs
+          path: |
+            ${{ env.RESULT_DIR }}/*.log
+            /var/lib/mock/*/result/*.log
+          if-no-files-found: warn
+
       - name: Collect artifacts
         run: |
           mkdir -p out/SRPMS out/RPMS
-          cp /var/lib/mock/${MOCK_CFG}/result/*.src.rpm out/SRPMS/
-          cp /var/lib/mock/${MOCK_CFG}/result/*.x86_64.rpm out/RPMS/
+          shopt -s nullglob
+          src=( "${RESULT_DIR}"/*.src.rpm )
+          bin=( "${RESULT_DIR}"/*.x86_64.rpm )
+          if [ ${#src[@]} -eq 0 ] || [ ${#bin[@]} -eq 0 ]; then
+            echo "::error::Expected RPMs not found in ${RESULT_DIR}"
+            ls -la "${RESULT_DIR}" || true
+            exit 1
+          fi
+          cp -v "${src[@]}" out/SRPMS/
+          cp -v "${bin[@]}" out/RPMS/
           ls -la out/RPMS out/SRPMS
 
       - name: Upload RPMs as workflow artifact
