@@ -131,7 +131,7 @@ jobs:
           fi
           echo "Using mock config: ${MOCK_CFG}"
           echo "MOCK_CFG=${MOCK_CFG}" >> "$GITHUB_ENV"
-          mock -r "${MOCK_CFG}" --isolation=simple \
+          mock --verbose  -r "${MOCK_CFG}" --isolation=simple \
             --resultdir=/tmp/mock-result \
             --rebuild ~/rpmbuild/SRPMS/rusty_lights-*.src.rpm
 
