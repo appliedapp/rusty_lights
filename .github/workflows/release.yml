@@ -113,7 +113,7 @@ jobs:
             | xargs -n1 basename | sed 's/\.cfg$//')
           echo "Using mock config: ${MOCK_CFG}"
           echo "MOCK_CFG=${MOCK_CFG}" >> "$GITHUB_ENV"
-          mock -r "${MOCK_CFG}" --isolation=simple \
+          mock --verbose -r "${MOCK_CFG}" --isolation=simple \
             --rebuild ~/rpmbuild/SRPMS/rusty_lights-*.src.rpm
 
       - name: Collect artifacts
