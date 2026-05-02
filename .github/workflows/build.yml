@@ -1,0 +1,121 @@
+name: Build
+
+# Reusable build workflow.
+#
+# Used by:
+#   - ci.yml      (PR / push to main, no artifact uploads)
+#   - release.yml (tag push, with artifact uploads for the GH Release)
+#
+# Always runs fmt, clippy, tests and a release build for native + cross targets.
+# When `upload_artifacts: true`, also builds .deb packages and uploads
+# binaries + .debs as workflow artifacts.
+
+on:
+  workflow_call:
+    inputs:
+      upload_artifacts:
+        description: "Build .deb packages and upload binaries/debs as artifacts"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install ALSA dev
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --no-default-features --features alsa -- -D warnings
+
+      - name: Test
+        run: cargo test --no-default-features --features alsa
+
+      - name: Build release binary
+        run: cargo build --release --no-default-features --features alsa
+
+      - name: Build .deb package
+        if: inputs.upload_artifacts
+        run: |
+          cargo install cargo-deb --locked
+          cargo deb --no-build --no-default-features
+
+      - name: Rename binary
+        if: inputs.upload_artifacts
+        run: cp target/release/rusty_lights rusty_lights-x86_64-linux
+
+      - name: Upload binary
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rusty_lights-x86_64-linux
+          path: rusty_lights-x86_64-linux
+
+      - name: Upload .deb
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-amd64
+          path: target/debian/*.deb
+
+  cross:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            name: rusty_lights-aarch64-linux
+            deb_arch: arm64
+          - target: armv7-unknown-linux-gnueabihf
+            name: rusty_lights-armv7-linux
+            deb_arch: armhf
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Install cross
+        run: cargo install cross --locked
+
+      - name: Install cargo-deb
+        if: inputs.upload_artifacts
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: cross build --release --target ${{ matrix.target }} --no-default-features --features alsa
+
+      - name: Build .deb package
+        if: inputs.upload_artifacts
+        run: cargo deb --no-build --no-default-features --target ${{ matrix.target }}
+
+      - name: Rename binary
+        if: inputs.upload_artifacts
+        run: cp target/${{ matrix.target }}/release/rusty_lights ${{ matrix.name }}
+
+      - name: Upload binary
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}
+
+      - name: Upload .deb
+        if: inputs.upload_artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.deb_arch }}
+          path: target/${{ matrix.target }}/debian/*.deb

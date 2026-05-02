@@ -22,84 +22,13 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-native:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-
-      - name: Build release binary
-        run: cargo build --release --no-default-features --features alsa
-
-      - name: Build .deb package
-        run: |
-          cargo install cargo-deb --locked
-          cargo deb --no-build --no-default-features
-
-      - name: Rename binary
-        run: cp target/release/rusty_lights rusty_lights-x86_64-linux
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: rusty_lights-x86_64-linux
-          path: rusty_lights-x86_64-linux
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-amd64
-          path: target/debian/*.deb
-
-  build-cross:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-unknown-linux-gnu
-            name: rusty_lights-aarch64-linux
-            deb_arch: arm64
-          - target: armv7-unknown-linux-gnueabihf
-            name: rusty_lights-armv7-linux
-            deb_arch: armhf
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
-
-      - name: Install cross and cargo-deb
-        run: |
-          cargo install cross --locked
-          cargo install cargo-deb --locked
-
-      - name: Build release binary
-        run: cross build --release --target ${{ matrix.target }} --no-default-features --features alsa
-
-      - name: Build .deb package
-        run: cargo deb --no-build --no-default-features --target ${{ matrix.target }}
-
-      - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/rusty_lights ${{ matrix.name }}
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.name }}
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-${{ matrix.deb_arch }}
-          path: target/${{ matrix.target }}/debian/*.deb
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      upload_artifacts: true
 
   release:
-    needs: [build-native, build-cross]
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
