@@ -3,93 +3,33 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish_repo:
+        description: "Publish RPMs to gh-pages yum repo"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-native:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-
-      - name: Build release binary
-        run: cargo build --release --no-default-features --features alsa
-
-      - name: Build .deb package
-        run: |
-          cargo install cargo-deb --locked
-          cargo deb --no-build --no-default-features
-
-      - name: Rename binary
-        run: cp target/release/rusty_lights rusty_lights-x86_64-linux
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: rusty_lights-x86_64-linux
-          path: rusty_lights-x86_64-linux
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-amd64
-          path: target/debian/*.deb
-
-  build-cross:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: aarch64-unknown-linux-gnu
-            name: rusty_lights-aarch64-linux
-            deb_arch: arm64
-          - target: armv7-unknown-linux-gnueabihf
-            name: rusty_lights-armv7-linux
-            deb_arch: armhf
-
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.94.0
-
-      - name: Install cross and cargo-deb
-        run: |
-          cargo install cross --locked
-          cargo install cargo-deb --locked
-
-      - name: Build release binary
-        run: cross build --release --target ${{ matrix.target }} --no-default-features --features alsa
-
-      - name: Build .deb package
-        run: cargo deb --no-build --no-default-features --target ${{ matrix.target }}
-
-      - name: Rename binary
-        run: cp target/${{ matrix.target }}/release/rusty_lights ${{ matrix.name }}
-
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.name }}
-          path: ${{ matrix.name }}
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-${{ matrix.deb_arch }}
-          path: target/${{ matrix.target }}/debian/*.deb
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      upload_artifacts: true
 
   release:
-    needs: [build-native, build-cross]
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,3 +45,194 @@ jobs:
         with:
           generate_release_notes: true
           files: artifacts/*
+
+  build-rpm:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+      options: --privileged
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      dist:    ${{ steps.version.outputs.dist }}
+    steps:
+      - name: Install build tooling
+        run: |
+          dnf -y install \
+            git rpm-build rpmdevtools mock cargo rust \
+            createrepo_c zstd tar
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          fi
+          FEDORA_VER=$(rpm -E %fedora)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "dist=fc${FEDORA_VER}" >> "$GITHUB_OUTPUT"
+          echo "Building rusty_lights ${VERSION} for fc${FEDORA_VER}"
+
+      - name: Update spec version
+        run: |
+          sed -i -E "s/^Version:.*/Version:        ${{ steps.version.outputs.version }}/" rusty_lights.spec
+
+      - name: Set up rpmbuild tree
+        run: rpmdev-setuptree
+
+      - name: Create source tarball
+        run: |
+          V=${{ steps.version.outputs.version }}
+          git archive --format=tar.gz \
+            --prefix=rusty_lights-${V}/ \
+            -o ~/rpmbuild/SOURCES/rusty_lights-${V}.tar.gz HEAD
+
+      - name: Vendor cargo dependencies
+        run: |
+          V=${{ steps.version.outputs.version }}
+          cargo vendor --versioned-dirs vendor
+          tar --zstd -cf ~/rpmbuild/SOURCES/rusty_lights-${V}-vendor.tar.zst vendor
+
+      - name: Build SRPM
+        run: rpmbuild -bs rusty_lights.spec
+
+      - name: Build RPM with mock
+        run: |
+          # Latest stable Fedora mock config (skip rawhide/eln/branched)
+          MOCK_CFG=$(ls /etc/mock/fedora-*-x86_64.cfg \
+            | grep -vE 'rawhide|eln|branched' \
+            | sort -V | tail -1 \
+            | xargs -n1 basename | sed 's/\.cfg$//')
+          echo "Using mock config: ${MOCK_CFG}"
+          echo "MOCK_CFG=${MOCK_CFG}" >> "$GITHUB_ENV"
+          mock -r "${MOCK_CFG}" --isolation=simple \
+            --rebuild ~/rpmbuild/SRPMS/rusty_lights-*.src.rpm
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p out/SRPMS out/RPMS
+          cp /var/lib/mock/${MOCK_CFG}/result/*.src.rpm out/SRPMS/
+          cp /var/lib/mock/${MOCK_CFG}/result/*.x86_64.rpm out/RPMS/
+          ls -la out/RPMS out/SRPMS
+
+      - name: Upload RPMs as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpms
+          path: out/
+
+      - name: Attach RPMs to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            out/RPMS/*.rpm
+            out/SRPMS/*.src.rpm
+
+  publish-rpm-repo:
+    needs: build-rpm
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish_repo
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Install repo tooling
+        run: dnf -y install createrepo_c git
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: pages
+          fetch-depth: 1
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Initialise gh-pages branch if missing
+        run: |
+          if [ ! -d pages/.git ]; then
+            mkdir -p pages
+            cd pages
+            git init -b gh-pages
+            git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          git config --global --add safe.directory "$GITHUB_WORKSPACE/pages"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpms
+          path: incoming
+
+      - name: Merge new RPMs into repo tree
+        run: |
+          # Repo layout served by GitHub Pages:
+          #   /fedora/<dist>/x86_64/   (binary RPMs + repodata)
+          #   /fedora/<dist>/source/   (SRPMs        + repodata)
+          DIST="${{ needs.build-rpm.outputs.dist }}"
+          BASE="pages/fedora/${DIST}"
+          mkdir -p "${BASE}/x86_64" "${BASE}/source"
+          cp -v incoming/RPMS/*.rpm "${BASE}/x86_64/"
+          cp -v incoming/SRPMS/*.src.rpm "${BASE}/source/"
+          createrepo_c --update "${BASE}/x86_64"
+          createrepo_c --update "${BASE}/source"
+
+      - name: Generate .repo file and landing page
+        run: |
+          REPO_URL="https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY##*/}"
+          cat > "pages/rusty_lights.repo" <<EOF
+          [rusty_lights]
+          name=RustyLights for Fedora \$releasever
+          baseurl=${REPO_URL}/fedora/fc\$releasever/\$basearch
+          enabled=1
+          gpgcheck=0
+          repo_gpgcheck=0
+          metadata_expire=300
+
+          [rusty_lights-source]
+          name=RustyLights for Fedora \$releasever - Source
+          baseurl=${REPO_URL}/fedora/fc\$releasever/source
+          enabled=0
+          gpgcheck=0
+          EOF
+
+          cat > pages/index.html <<EOF
+          <!doctype html>
+          <html><head><meta charset="utf-8"><title>RustyLights RPM Repository</title>
+          <style>body{font-family:sans-serif;max-width:48em;margin:2em auto;padding:0 1em;line-height:1.5}
+          code,pre{background:#f4f4f4;padding:.2em .4em;border-radius:3px}
+          pre{padding:1em;overflow-x:auto}</style></head>
+          <body>
+          <h1>RustyLights RPM Repository</h1>
+          <p>Add the repo and install:</p>
+          <pre>sudo dnf config-manager addrepo --from-repofile=${REPO_URL}/rusty_lights.repo
+          sudo dnf install rusty_lights</pre>
+          <p>Available distributions: <a href="fedora/">fedora/</a></p>
+          <p>Repo file: <a href="rusty_lights.repo">rusty_lights.repo</a></p>
+          </body></html>
+          EOF
+          # Prevent Jekyll from hiding repodata directories
+          touch pages/.nojekyll
+
+      - name: Commit and push to gh-pages
+        run: |
+          cd pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+            exit 0
+          fi
+          git commit -m "Publish RPMs for ${{ needs.build-rpm.outputs.version }} (${{ needs.build-rpm.outputs.dist }})"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:gh-pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
