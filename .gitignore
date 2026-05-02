@@ -1,6 +1,8 @@
 # Build artifacts
 /target
 *.rs.bk
+/vendor
+/.cargo/config.toml
 
 # IDE
 .idea/
