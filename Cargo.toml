@@ -1,6 +1,6 @@
 [package]
 name = "rusty_lights"
-version = "0.9.0"
+version = "0.9.1"
 edition = "2024"
 authors = ["RustLED Contributors"]
 description = "Resource-efficient audio-to-LED visualization"
