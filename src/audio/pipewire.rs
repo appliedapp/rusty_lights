@@ -14,6 +14,9 @@ use pw::spa::param::format_utils;
 use pw::spa::utils::Direction;
 use pw::stream::StreamFlags;
 
+/// Message sent from the engine to the PipeWire mainloop to request shutdown.
+struct Terminate;
+
 /// PipeWire audio capture backend
 pub struct PipeWireCapture {
     sample_rate: u32,
@@ -22,6 +25,7 @@ pub struct PipeWireCapture {
     device: String,
     running: Arc<AtomicBool>,
     thread_handle: Option<JoinHandle<()>>,
+    quit_sender: Option<pw::channel::Sender<Terminate>>,
 }
 
 impl PipeWireCapture {
@@ -36,6 +40,7 @@ impl PipeWireCapture {
             device: "auto".to_string(),
             running: Arc::new(AtomicBool::new(false)),
             thread_handle: None,
+            quit_sender: None,
         })
     }
 
@@ -114,12 +119,20 @@ impl AudioBackend for PipeWireCapture {
         let running = self.running.clone();
         let device = self.device.clone();
 
+        let (quit_sender, quit_receiver) = pw::channel::channel();
+        self.quit_sender = Some(quit_sender);
+
         let handle = thread::Builder::new()
             .name("pipewire-audio".to_string())
             .spawn(move || {
-                if let Err(e) =
-                    run_capture_loop(sample_rate, channels, ring_buffer, running, &device)
-                {
+                if let Err(e) = run_capture_loop(
+                    sample_rate,
+                    channels,
+                    ring_buffer,
+                    running,
+                    &device,
+                    quit_receiver,
+                ) {
                     log::error!("PipeWire capture error: {}", e);
                 }
             })
@@ -141,6 +154,11 @@ impl AudioBackend for PipeWireCapture {
         }
 
         self.running.store(false, Ordering::SeqCst);
+
+        // Wake the mainloop so it can quit immediately, even when no audio is flowing.
+        if let Some(sender) = self.quit_sender.take() {
+            let _ = sender.send(Terminate);
+        }
 
         if let Some(handle) = self.thread_handle.take() {
             handle
@@ -188,9 +206,18 @@ fn run_capture_loop(
     ring_buffer: Arc<RingBuffer<f32>>,
     running: Arc<AtomicBool>,
     device: &str,
+    quit_receiver: pw::channel::Receiver<Terminate>,
 ) -> Result<(), AudioError> {
     let mainloop = pw::main_loop::MainLoopRc::new(None)
         .map_err(|e| AudioError::InitError(format!("Failed to create main loop: {}", e)))?;
+
+    // Attach the cross-thread shutdown channel to this mainloop.
+    // When stop() sends Terminate, the callback runs inside the mainloop
+    // thread and quits it cleanly, even if no audio data is flowing.
+    let _quit_attached = quit_receiver.attach(mainloop.loop_(), {
+        let mainloop = mainloop.clone();
+        move |_| mainloop.quit()
+    });
 
     let context = pw::context::ContextRc::new(&mainloop, None)
         .map_err(|e| AudioError::InitError(format!("Failed to create context: {}", e)))?;

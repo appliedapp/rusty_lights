@@ -1394,6 +1394,7 @@ dependencies = [
  "criterion",
  "ctrlc",
  "env_logger",
+ "libc",
  "log",
  "mdns-sd",
  "pipewire",

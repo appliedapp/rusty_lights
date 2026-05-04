@@ -148,8 +148,12 @@ impl Engine {
 
     /// Stop the visualizer
     pub fn stop(&mut self) -> Result<(), EngineError> {
-        if !self.running.load(Ordering::SeqCst) {
-            return Ok(()); // Already stopped
+        // Skip if already cleaned up (e.g. when Drop runs after explicit stop)
+        let nothing_to_do = self.audio_backend.is_none() && self.processing_thread.is_none();
+        #[cfg(feature = "http")]
+        let nothing_to_do = nothing_to_do && self.web_thread.is_none();
+        if nothing_to_do {
+            return Ok(());
         }
 
         self.running.store(false, Ordering::SeqCst);

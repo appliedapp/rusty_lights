@@ -3,8 +3,9 @@
 //! FIFO audio backend for MPD and other players that output raw PCM to a named pipe
 
 use super::{AudioBackend, AudioError, RingBuffer};
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::{self, JoinHandle};
@@ -128,14 +129,17 @@ fn run_capture_loop(
     let buf_frames = 512;
     let mut buf = vec![0u8; buf_frames * frame_bytes];
 
+    // O_NONBLOCK so neither open() nor read() blocks indefinitely;
+    // we poll for shutdown between attempts.
     while running.load(Ordering::Relaxed) {
-        // Open the FIFO (blocks until a writer opens the other end).
-        // We re-open on EOF so we survive MPD restarts.
-        let mut file = match File::open(fifo_path) {
+        let mut file = match OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(fifo_path)
+        {
             Ok(f) => f,
             Err(e) => {
                 log::error!("Failed to open FIFO '{}': {}", fifo_path, e);
-                // Wait a bit before retrying to avoid busy-loop
                 thread::sleep(std::time::Duration::from_secs(1));
                 continue;
             }
@@ -151,7 +155,6 @@ fn run_capture_loop(
                     break;
                 }
                 Ok(n) => {
-                    // Process complete frames only
                     let complete_bytes = n - (n % frame_bytes);
                     let samples = &buf[..complete_bytes];
 
@@ -165,6 +168,9 @@ fn run_capture_loop(
                         mono /= channels as f32;
                         ring_buffer.push(mono);
                     }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    thread::sleep(std::time::Duration::from_millis(20));
                 }
                 Err(e) => {
                     log::warn!("FIFO read error: {}, retrying", e);

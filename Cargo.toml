@@ -47,6 +47,7 @@ mdns-sd = { version = "0.19", optional = true }
 thiserror = "2.0"
 uuid = { version = "1.19", features = ["v4"] }
 ctrlc = "3.5"
+libc = "0.2"
 
 [dev-dependencies]
 criterion = { version = "0.6", features = ["html_reports"] }
